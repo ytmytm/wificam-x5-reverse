@@ -15,6 +15,11 @@ install -o pi -g pi -m 0755 "$ROOT/rtp_jpeg.py" "$PREFIX/rtp_jpeg.py"
 install -o pi -g pi -m 0755 "$ROOT/x5_viewer.py" "$PREFIX/x5_viewer.py"
 install -o root -g root -m 0644 "$ROOT/x5-viewer.service" \
     /etc/systemd/system/x5-viewer.service
+if id homeassistant >/dev/null 2>&1; then
+    install -d -o root -g root /etc/systemd/system/home-assistant@homeassistant.service.d
+    install -o root -g root -m 0644 "$ROOT/home-assistant-x5.conf" \
+        /etc/systemd/system/home-assistant@homeassistant.service.d/x5-camera.conf
+fi
 
 if [ -n "$ENV_SOURCE" ]; then
     test -r "$ENV_SOURCE" || { echo "cannot read $ENV_SOURCE" >&2; exit 1; }

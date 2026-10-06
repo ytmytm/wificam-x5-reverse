@@ -2,14 +2,15 @@
 Description=Publish TXW817 X5 video and audio as RTSP
 After=x5-viewer.service x5-mediamtx.service
 Wants=x5-viewer.service x5-mediamtx.service
+Before=home-assistant@homeassistant.service
 
 [Service]
 Type=simple
 User=pi
 Group=pi
 ExecStart=/opt/x5-viewer/x5-rtsp-publish.sh
-Restart=always
-RestartSec=10
+Restart=on-failure
+RestartSec=15
 NoNewPrivileges=true
 PrivateTmp=true
 

@@ -169,6 +169,15 @@ installation, the autoconfig uses Generic Camera with the local single-frame
 `/snapshot.jpg` endpoint. This avoids the optional `stream` integration and
 its NumPy dependency, which is not buildable in the current old HA environment.
 The RTSP endpoint remains available for clients that support it.
+
+### Boot order and camera offline behavior
+
+The systemd units for the viewer, MediaMTX, and the RTSP publisher are enabled
+before Home Assistant. Home Assistant has a `Wants`/`After` drop-in for this
+stack, but those are ordering and soft dependencies: Home Assistant still
+starts if the camera is powered off or absent from the LAN. The viewer keeps
+its HTTP endpoints available and reports no frame until the camera returns;
+the publisher retries without restarting Home Assistant.
 after making a timestamped backup. The installer attempts to validate the
 configuration before restarting Home Assistant; if the old HA environment
 cannot finish its dependency check, it leaves HA running and reports that

@@ -2,6 +2,7 @@
 Description=TXW817 X5 local web viewer
 After=network-online.target
 Wants=network-online.target
+Before=home-assistant@homeassistant.service
 
 [Service]
 Type=simple
