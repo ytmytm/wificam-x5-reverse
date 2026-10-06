@@ -170,9 +170,11 @@ Home Assistant/ARMv7 installation, Generic Camera uses
 `rtsp://127.0.0.1:8554/x5` as its stream source. The RTSP stream is handled by
 HA's `stream` integration.
 
-The installer configures stable non-LL HLS. HA 2023.10's LL-HLS mode can
-repeatedly rebuffer in older browsers, even when the RTSP input is healthy;
-the trade-off is a few seconds of additional latency.
+The installer configures low-latency HLS (`ll_hls: true`) with 2-second
+segments and 0.5-second parts. This should reduce live-view latency to roughly
+1–2 seconds. If an older browser/client repeatedly rebuffers despite a healthy
+RTSP input, set `ll_hls: false`; that is more stable but adds several seconds
+of buffering.
 
 The publisher declares the camera's measured input rate explicitly as 8 FPS.
 Without `-framerate 8`, FFmpeg assumes 25 FPS for the multipart MJPEG input;

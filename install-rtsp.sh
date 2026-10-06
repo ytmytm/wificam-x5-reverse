@@ -48,9 +48,12 @@ if id homeassistant >/dev/null 2>&1; then
     if ! grep -Eq '^[[:space:]]*stream:[[:space:]]*$' "$HA_CONFIG"; then
         cat >> "$HA_CONFIG" <<'EOF'
 
-# Stable HLS for the X5 RTSP camera. LL-HLS is unreliable in old HA browsers.
+# Low-latency HLS for the X5 RTSP camera. Fall back to ll_hls: false if the
+# browser/client cannot handle partial HLS segments.
 stream:
-  ll_hls: false
+  ll_hls: true
+  segment_duration: 2
+  part_duration: 0.5
 EOF
     fi
     chown homeassistant:homeassistant "$HA_CONFIG"
