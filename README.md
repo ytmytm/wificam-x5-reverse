@@ -175,6 +175,11 @@ The installer configures low-latency HLS (`segment_duration: 2`,
 HLS segments, which causes a visible loading pause followed by accelerated
 playback in the browser.
 
+The publisher declares the camera's measured input rate explicitly as 8 FPS.
+Without `-framerate 8`, FFmpeg assumes 25 FPS for the multipart MJPEG input;
+the resulting timestamps make HA/HLS wait and then play buffered frames too
+quickly.
+
 After Home Assistant imports the Generic Camera entry, remove the temporary
 `camera: !include x5_camera.yaml` line from `configuration.yaml`. The imported
 config entry is persistent; leaving the YAML import in place can create a
