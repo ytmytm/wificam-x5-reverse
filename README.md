@@ -170,6 +170,14 @@ installation, the autoconfig uses Generic Camera with the local single-frame
 its NumPy dependency, which is not buildable in the current old HA environment.
 The RTSP endpoint remains available for clients that support it.
 
+The Odroid's HA service also starts with `--skip-pip-packages numpy`. HA
+2023.10 requests exactly `numpy==1.26.0`, but ARMv7/Python 3.11 has no matching
+binary wheel and the installed GCC 7.5 cannot build it (NumPy 1.26 requires
+GCC 8.4+). NumPy 1.23.2 is already installed and is sufficient for the
+currently used integrations; skipping only this package prevents a failed
+source build from delaying every HA boot. Revisit this override when upgrading
+Home Assistant or its stream integration.
+
 ### Boot order and camera offline behavior
 
 The systemd units for the viewer, MediaMTX, and the RTSP publisher are enabled
