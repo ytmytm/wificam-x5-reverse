@@ -84,3 +84,11 @@ Audio was toggled twice during the same capture. No cloud command or separate
 audio-control HTTP request was observed; audio-sized UDP packets continued
 throughout. The current evidence points to a local mute/unmute operation in
 the mobile app rather than a camera setting.
+
+The audio packets use RTP payload type `128`. After the 12-byte RTP header,
+the stream has the same four-byte SSRC (`42 52 12 91`) seen in the video
+packets, followed by 252 bytes of G.711 μ-law samples. Packet timing is about
+31 packets per second, consistent with 8 kHz mono audio. `x5_viewer.py`
+decodes those samples to signed little-endian PCM16 and publishes them at
+`/audio.pcm` for the browser. Video and audio are kept as separate internal
+tracks so a future RTSP output can mux them without changing camera capture.

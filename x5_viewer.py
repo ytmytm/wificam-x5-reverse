@@ -3,6 +3,7 @@
 
 import json
 import os
+import queue
 import socket
 import struct
 import threading
@@ -10,7 +11,7 @@ import time
 import urllib.parse
 import urllib.request
 from urllib.error import HTTPError, URLError
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
@@ -61,11 +62,19 @@ button:hover{border-color:var(--accent);background:#30445d}button:disabled{curso
 <div class="group"><h2>IR</h2><div class="buttons"><button onclick="cmd('ir',1)">Włącz</button><button onclick="cmd('ir',0)">Wyłącz</button></div></div>
 <div class="group"><h2>Odbicie</h2><div class="buttons"><button onclick="cmd('flip_h',1)">Poziomo</button><button onclick="cmd('flip_h',0)">Bez H</button><button onclick="cmd('flip_v',1)">Pionowo</button><button onclick="cmd('flip_v',0)">Bez V</button></div></div>
 <div class="group"><h2>Profil obrazu</h2><div class="buttons"><button onclick="cmd('quality',0)">Profil 0</button><button onclick="cmd('quality',1)">Profil 1</button><button onclick="cmd('quality',2)">Profil 2</button></div><div class="hint">Mapowanie SD / HD / FHD nie jest jeszcze potwierdzone.</div></div>
-<div class="group"><h2>Dźwięk</h2><button disabled title="Nie ma jeszcze rozpoznanej komendy kamery">Nierozpoznane</button><div class="hint">W dotychczasowym capture aplikacja nie wysłała komendy audio; MJPEG nie zawiera dźwięku.</div></div>
+<div class="group"><h2>Dźwięk</h2><button id="audioButton" onclick="toggleAudio()">Włącz dźwięk</button><div id="audioState" class="hint">Dźwięk jest osobnym strumieniem G.711 μ-law 8 kHz. Przeglądarka wymaga kliknięcia.</div></div>
 </aside></div>
 <script>
 async function refresh(){try{let r=await fetch('/status');let x=await r.json();let e=document.getElementById('status');e.textContent=x.status+' · klatki: '+x.frames;e.className='pill '+(x.status==='streaming'?'ok':'bad');}catch(e){}}
 async function cmd(name,value){let out=document.getElementById('result');out.textContent='Wysyłanie…';try{let r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:name,value:value})});let x=await r.json();out.textContent=r.ok?'Wysłano: '+name+' = '+value:(x.error||'Błąd');}catch(e){out.textContent='Błąd połączenia';}}
+let audioRun=false,audioContext=null,audioReader=null,audioNext=0;
+function ulawByte(x){x=(~x)&255;let t=((x&15)<<3)+132;t<<=((x&112)>>4);return (x&128)?(132-t):(t-132);}
+async function toggleAudio(){let b=document.getElementById('audioButton'),s=document.getElementById('audioState');
+ if(audioRun){audioRun=false;if(audioReader)try{await audioReader.cancel()}catch(e){};if(audioContext)await audioContext.close();b.textContent='Włącz dźwięk';s.textContent='Dźwięk wyłączony';return;}
+ try{audioContext=new (window.AudioContext||window.webkitAudioContext)();await audioContext.resume();let r=await fetch('/audio.pcm');audioReader=r.body.getReader();audioRun=true;audioNext=audioContext.currentTime+0.08;b.textContent='Wyłącz dźwięk';s.textContent='Dźwięk aktywny';
+  let pending=new Uint8Array(0);while(audioRun){let q=await audioReader.read();if(q.done)break;let x=new Uint8Array(pending.length+q.value.length);x.set(pending);x.set(q.value,pending.length);pending=x;let n=pending.length&~1;if(!n)continue;let a=audioContext.createBuffer(1,n/2,8000),d=a.getChannelData(0);for(let i=0;i<n;i+=2)d[i/2]=new DataView(pending.buffer,pending.byteOffset+i,2).getInt16(0,true)/32768;pending=pending.slice(n);let src=audioContext.createBufferSource();src.buffer=a;src.connect(audioContext.destination);let now=audioContext.currentTime;audioNext=Math.max(audioNext,now+0.03);src.start(audioNext);audioNext+=a.duration;}
+ }catch(e){audioRun=false;b.textContent='Włącz dźwięk';s.textContent='Błąd dźwięku: '+e;}
+}
 refresh();setInterval(refresh,3000);
 </script></main></body></html>"""
 
@@ -78,10 +87,47 @@ class State:
         self.received = 0
         self.status = "starting"
         self.last_error = ""
+        self.audio_clients = []  # type: List[queue.Queue]
 
     def set_status(self, status: str, error: str = "") -> None:
         with self.lock:
             self.status, self.last_error = status, error
+
+    def add_audio_client(self):
+        client = queue.Queue(maxsize=32)
+        with self.lock:
+            self.audio_clients.append(client)
+        return client
+
+    def remove_audio_client(self, client) -> None:
+        with self.lock:
+            if client in self.audio_clients:
+                self.audio_clients.remove(client)
+
+    def publish_audio(self, pcm: bytes) -> None:
+        with self.lock:
+            clients = list(self.audio_clients)
+        for client in clients:
+            try:
+                client.put_nowait(pcm)
+            except queue.Full:
+                try:
+                    client.get_nowait()
+                    client.put_nowait(pcm)
+                except queue.Empty:
+                    pass
+
+
+def mulaw_to_pcm16(data: bytes) -> bytes:
+    """Decode the camera's RTP audio (G.711 μ-law, 8 kHz, mono)."""
+    out = bytearray(len(data) * 2)
+    for i, value in enumerate(data):
+        value = (~value) & 0xff
+        magnitude = ((value & 0x0f) << 3) + 132
+        magnitude <<= (value & 0x70) >> 4
+        sample = 132 - magnitude if value & 0x80 else magnitude - 132
+        struct.pack_into("<h", out, i * 2, sample)
+    return bytes(out)
 
 
 state = State()
@@ -187,6 +233,9 @@ def udp_worker() -> None:
         except socket.timeout:
             continue
         if len(packet) < 16 or packet[:2] not in (b"\x80\x1a", b"\x80\x9a"):
+            if len(packet) >= 16 and packet[:2] == b"\x80\x80":
+                # RTP PT 128, SSRC 42521291, followed by G.711 μ-law bytes.
+                state.publish_audio(mulaw_to_pcm16(packet[16:]))
             continue
         frame_id = packet[6:12]
         offset = struct.unpack("!I", packet[12:16])[0]
@@ -231,6 +280,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+            return
+        if self.path == "/audio.pcm":
+            client = state.add_audio_client()
+            self.send_response(200)
+            # The body is signed little-endian PCM16; audio/L16 conventionally
+            # means big-endian, so keep the MIME type generic.
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                while True:
+                    chunk = client.get(timeout=30)
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+            except (queue.Empty, BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                state.remove_audio_client(client)
             return
         if self.path != "/stream.mjpg":
             self.send_error(404)

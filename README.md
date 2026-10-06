@@ -2,7 +2,7 @@
 
 This project provides a small, dependency-free Python server for the low-cost
 WiFi camera sold as **X5** and identified by its firmware as **TXW817**. It
-receives the camera's local UDP MJPEG stream and exposes it as a browser
+receives the camera's local UDP video/audio stream and exposes it as a browser
 preview.
 
 The implementation was tested on an ARMv7 Odroid running Ubuntu 18.04. It does
@@ -14,6 +14,7 @@ not require Docker, Node.js, npm, or Python packages.
 ## Features
 
 - local web preview at `/stream.mjpg`;
+- browser audio at `/audio.pcm` (signed little-endian PCM16, 8 kHz mono);
 - browser control page at `/` with LED, IR, flip, and quality controls;
 - JSON health endpoint at `/status`;
 - cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
@@ -66,7 +67,13 @@ Open the preview from a LAN browser:
 http://<odroid-ip>:5080/stream.mjpg
 ```
 
-Open `http://<odroid-ip>:5080/` for the control page. The implemented command
+Open `http://<odroid-ip>:5080/` for the control page. Click **Włącz dźwięk**
+once after opening the page; this is required by browser autoplay policy. The
+video and audio are currently separate browser tracks, so a small amount of
+drift can occur over a long session. The raw internal tracks are deliberately
+kept separate to make a future FFmpeg/RTSP adapter straightforward.
+
+The implemented command
 mapping is LED (`3`), IR (`7`), vertical flip (`8`), horizontal flip (`9`),
 and image profile (`22`, values `0`/`1`/`2`). The capture confirms that these
 three profile values are sent, but all captured video headers remained
@@ -74,8 +81,10 @@ three profile values are sent, but all captured video headers remained
 
 The app capture did include two audio toggles. No camera command or separate
 audio-control request appeared; 268-byte audio datagrams continued throughout
-the session. This strongly suggests that audio is muted locally in the mobile
-player. The current MJPEG endpoint therefore marks audio as unavailable.
+the session. The camera nevertheless sends a separate RTP audio track: the
+payload is G.711 μ-law at 8 kHz, mono. The viewer decodes it to signed
+little-endian PCM16 for the browser; this is local playback control, not a
+camera mute command.
 
 The viewer remains running when the camera is absent. It reports `offline` or
 `negotiated` in `/status` and retries automatically.
