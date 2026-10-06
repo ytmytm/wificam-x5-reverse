@@ -1,9 +1,10 @@
-# TXW817 / WiFiCam X5 local viewer
+# TXW817 / WiFiCam X5 local receiver, RTSP publisher and web viewer
 
-This project provides a small, dependency-free Python server for the low-cost
+This project provides a small, dependency-free Python receiver for the low-cost
 WiFi camera sold as **X5** and identified by its firmware as **TXW817**. It
-receives the camera's local UDP video/audio stream and exposes it as a browser
-preview.
+uses the vendor HTTP API only to start a live session, receives the media over
+the LAN, and can expose it either as a diagnostic browser preview or as an
+RTSP stream for Home Assistant and other clients.
 
 The implementation was tested on an ARMv7 Odroid running Ubuntu 18.04. It does
 not require Docker, Node.js, npm, or Python packages.
@@ -21,10 +22,45 @@ not require Docker, Node.js, npm, or Python packages.
 - cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
 - automatic retry when the camera or cloud API is unavailable;
 - systemd autostart and graceful offline behavior;
-- optional local RTSP output at `rtsp://<odroid-ip>:8554/x5`; the publisher
-  owns the UDP camera session and does not require the web demo;
-- optional Home Assistant Generic Camera autoconfiguration with RTSP/HLS;
+- standalone local RTSP output at `rtsp://<odroid-ip>:8554/x5`; the publisher
+  owns the UDP camera session and does not start the web demo;
+- Home Assistant Generic Camera support through RTSP/HLS;
 - Python 3.6-compatible runtime code for older ARM systems.
+
+The normal deployed setup needs only the RTSP publisher and MediaMTX. The HTTP
+viewer is a separate diagnostic service and is disabled by `install-rtsp.sh`.
+Docker, Node.js and npm are not required.
+
+## How the system works
+
+The camera does not advertise a usable UID in its LAN broadcast. The server
+therefore uses three private configuration values:
+
+1. `X5_UID` identifies the camera to the vendor API;
+2. `X5_API_TOKEN` authenticates the requests made by the mobile application;
+3. `X5_CAMERA_IP` identifies the camera on the LAN.
+
+The RTSP publisher performs this loop:
+
+```text
+systemd -> Python UDP receiver -> vendor HTTP API
+                         -> notify live event / UDP port negotiation
+camera UDP -> JPEG fragments + G.711 audio -> Python reassembler
+           -> FFmpeg H.264/G.711 -> MediaMTX -> RTSP -> Home Assistant
+```
+
+The vendor cloud is used for session setup and controls. Once the session is
+active, the media packets go directly from the camera to the Odroid over UDP;
+the cloud does not relay the video. The HTTP viewer and RTSP publisher share
+the same protocol implementation, but they must not listen on UDP port 50001
+at the same time.
+
+A successful cloud negotiation does **not** necessarily mean that video is
+already flowing. The camera can answer the API request and still take several
+negotiation attempts before it sends UDP media. In that state the log says
+`negotiation succeeded`, but the counters remain `packets=0` and MediaMTX has
+no `/x5` stream. The publisher keeps retrying and Home Assistant must not be
+restarted for this condition.
 
 ## Current device assumptions
 
@@ -39,6 +75,7 @@ be overridden through the environment file:
 | HTTP port | `5080` |
 | API host | `http://ipc.gps555.net` |
 | Application ID | see `config.env.example` |
+| Odroid LAN address | `192.168.2.45` in the development setup |
 
 The API currently uses an HTTP bearer token. The token is not included in this
 repository and must be supplied locally as `X5_API_TOKEN`.
@@ -86,7 +123,7 @@ The installer places the program in `/opt/x5-viewer`, installs the systemd
 unit, enables it at boot, and restarts it. The environment file is copied to
 `/etc/x5-viewer.env` with mode `0600`.
 
-Check the service:
+This installs only the diagnostic HTTP viewer. Check the service:
 
 ```sh
 systemctl status x5-viewer.service
@@ -119,6 +156,39 @@ mobile app, not to the camera-control API.
 
 The viewer remains running when the camera is absent. It reports `offline` or
 `negotiated` in `/status` and retries automatically.
+
+For the normal always-on setup, install the RTSP stack instead (or after
+testing the viewer):
+
+```sh
+sudo ./install-rtsp.sh
+```
+
+The RTSP installer requires `curl` and `ffmpeg`. It installs MediaMTX and the
+standalone publisher in `/opt/x5-viewer`, installs systemd units, disables the
+HTTP viewer, and enables:
+
+- `x5-mediamtx.service` — persistent RTSP server on TCP port 8554;
+- `x5-rtsp-publish.service` — camera negotiation, UDP receiver and FFmpeg
+  publisher;
+- `home-assistant@homeassistant.service` — if that HA installation exists.
+
+The private environment file is `/etc/x5-viewer.env`, mode `0600`. It is read
+by both the viewer and RTSP publisher. A token must be present before expecting
+media.
+
+Useful service commands:
+
+```sh
+systemctl status x5-rtsp-publish x5-mediamtx
+journalctl -u x5-rtsp-publish.service -f
+ss -lunp | grep 50001
+ffprobe -rtsp_transport tcp rtsp://127.0.0.1:8554/x5
+```
+
+Do not run `x5-viewer.service` together with `x5-rtsp-publish.service`: both
+would try to bind UDP port `50001`. To temporarily diagnose with the web UI,
+stop the RTSP publisher, start the viewer, and reverse that order afterwards.
 
 ## What is local and what still uses the vendor cloud
 
@@ -181,10 +251,40 @@ Without `-framerate 8`, FFmpeg assumes 25 FPS for the multipart MJPEG input;
 the resulting timestamps make HA/HLS wait and then play buffered frames too
 quickly.
 
-After Home Assistant imports the Generic Camera entry, remove the temporary
-`camera: !include x5_camera.yaml` line from `configuration.yaml`. The imported
-config entry is persistent; leaving the YAML import in place can create a
-second `WiFiCam X5` entity after a later restart.
+### Home Assistant configuration
+
+The recommended HA camera is one Generic Camera config entry with this stream
+source:
+
+```text
+rtsp://127.0.0.1:8554/x5
+```
+
+The camera entity used during development is `camera.wificam_x5`. The RTSP
+publisher and HA run on the same Odroid, so HA must use `127.0.0.1`, not the
+Odroid's LAN address. The browser connects to HA, while HA connects locally to
+MediaMTX.
+
+The HA `stream` integration is configured for low-latency HLS:
+
+```yaml
+stream:
+  ll_hls: true
+  segment_duration: 2
+  part_duration: 0.5
+```
+
+This is expected to give roughly 1–2 seconds of live-view latency. If an old
+browser repeatedly shows `loading` or renders partial segments unreliably, use
+`ll_hls: false`; that is more stable but normally adds several seconds of
+latency. These settings affect HA's browser output only; they do not change
+the camera's UDP stream.
+
+After Home Assistant imports the Generic Camera entry, do not keep a second
+`camera: !include x5_camera.yaml` definition. The imported config entry is
+persistent; leaving a YAML definition in place can create a second
+`WiFiCam X5` entity after a later restart. A stale `x5_camera.yaml` file by
+itself does nothing unless it is included from `configuration.yaml`.
 
 The Odroid's HA service also starts with `--skip-pip-packages numpy`. HA
 2023.10 requests exactly `numpy==1.26.0`, but ARMv7/Python 3.11 has no matching
@@ -201,12 +301,98 @@ before Home Assistant. Home Assistant has a `Wants`/`After` drop-in for this
 stack, but those are ordering and soft dependencies: Home Assistant still
 starts if the camera is powered off or absent from the LAN. The publisher
 retries without restarting Home Assistant. The web viewer service is disabled
-by `install-rtsp.sh` and remains an optional diagnostic tool.
-after making a timestamped backup. The installer attempts to validate the
-configuration before restarting Home Assistant; if the old HA environment
-cannot finish its dependency check, it leaves HA running and reports that
-condition. MediaMTX is used as the RTSP server because
+by `install-rtsp.sh` and remains an optional diagnostic tool. MediaMTX is used
+as the RTSP server because
 FFmpeg alone is an encoder/publisher, not a persistent RTSP server.
+
+## Troubleshooting: no image in HA
+
+Check the layers in this order; do not start by changing HLS buffering:
+
+1. Confirm the three services are active:
+
+   ```sh
+   systemctl is-active x5-rtsp-publish x5-mediamtx home-assistant@homeassistant
+   ```
+
+2. Read the publisher log:
+
+   ```sh
+   journalctl -u x5-rtsp-publish.service -f
+   ```
+
+   The important states are:
+
+   - `negotiation failed` — token, API, UID or network problem;
+   - `negotiation succeeded` — the API returned a camera UDP port, but this
+     alone does not prove media is flowing;
+   - `UDP stats ... packets=0` — the camera is not sending media yet;
+   - `first UDP packet received` and `first video frame assembled` — the
+     receiver is getting and decoding camera data.
+
+3. Confirm that MediaMTX sees a publisher:
+
+   ```sh
+   journalctl -u x5-mediamtx.service -n 30 --no-pager
+   ffprobe -v error -rtsp_transport tcp \
+     rtsp://127.0.0.1:8554/x5
+   ```
+
+   A working stream reports H.264 video and G.711 audio. `404 no stream is
+   available on path 'x5'` means that FFmpeg has not received a video frame;
+   it is not an HA authentication or HLS-buffering error.
+
+4. Check the UDP socket and camera lease:
+
+   ```sh
+   ss -lunp | grep 50001
+   ping <camera-ip>
+   ```
+
+   The camera must be reachable at the configured IP and UDP `50001` must be
+   owned by exactly one receiver.
+
+The camera firmware sometimes needs time after boot or a Wi-Fi reconnect
+before it starts the live UDP flow. The publisher retries the cloud request
+every 20 seconds and does not restart HA. A temporary period with successful
+negotiation but zero packets is therefore possible. If it remains at zero for
+several minutes, capture traffic around UDP port 50001 and compare it with a
+mobile-app live-view capture; do not assume that restarting HA will help.
+
+If the RTSP stream works with `ffprobe` but HA is blank, the problem is in HA's
+Generic Camera entry, HLS/browser compatibility, or the dashboard card. If
+RTSP itself is absent, fix the publisher/camera layer first.
+
+## Installed files and responsibilities
+
+| File or service | Purpose |
+| --- | --- |
+| `/opt/x5-viewer/x5_viewer.py` | shared camera API, UDP negotiation, JPEG/audio reassembly and optional HTTP viewer |
+| `/opt/x5-viewer/x5_rtsp_publish.py` | standalone receiver; pipes frames/audio directly to FFmpeg, no HTTP server |
+| `/opt/x5-viewer/rtp_jpeg.py` | camera-specific JPEG fragment reassembly helpers |
+| `/etc/x5-viewer.env` | private UID, IP, bearer token and port settings; mode `0600` |
+| `/usr/local/bin/mediamtx` | RTSP server process |
+| `/etc/x5-mediamtx.yml` | MediaMTX configuration |
+| `x5-viewer.service` | optional diagnostic HTTP service; disabled in RTSP mode |
+| `x5-rtsp-publish.service` | always-on camera receiver and FFmpeg publisher |
+| `x5-mediamtx.service` | always-on RTSP endpoint |
+| `home-assistant-x5.conf` | HA boot ordering and NumPy workaround |
+
+The receiver binds UDP `0.0.0.0:50001`. MediaMTX listens on TCP `8554`. The
+diagnostic viewer, when enabled, listens on HTTP `5080`; in the deployed setup
+its HTTP host is normally `127.0.0.1` or the service is stopped entirely.
+
+The diagnostic logger never prints the bearer token or media payload. It can
+be tuned through the private environment file:
+
+```dotenv
+X5_LOG_LEVEL=INFO
+X5_LOG_INTERVAL=10
+```
+
+Use `DEBUG` temporarily to see the cloud endpoint names and heartbeat events;
+do not use it as a substitute for packet capture when investigating the vendor
+protocol.
 
 ## Selecting a camera in the web UI
 
