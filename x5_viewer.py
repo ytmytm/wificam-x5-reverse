@@ -209,12 +209,21 @@ class Cloud:
 
 def assemble(groups, frame_id):
     fragments = groups.pop(frame_id, {})
+    offsets = sorted(fragments)
     first = fragments.get(0)
-    if not first or len(first) < 140 or not first.startswith(b"\x41\xff"):
+    if offsets[0:1] != [0] or not first or len(first) < 140 or not first.startswith(b"\x41\xff"):
         return None
-    body = first[:140] + first[140:] + b"".join(
-        fragments[offset][8:] for offset in sorted(fragments) if offset
-    )
+    body = first[:140] + first[140:]
+    expected = len(first) - 140
+    for offset in offsets[1:]:
+        fragment = fragments[offset]
+        # The transport offset counts JPEG entropy bytes. Never publish a
+        # frame with a missing UDP fragment; a decoder would show green blocks
+        # and the downstream RTSP buffer would keep accumulating damage.
+        if offset != expected or len(fragment) < 8:
+            return None
+        body += fragment[8:]
+        expected += len(fragment) - 8
     end = body.rfind(b"\xff\xd9")
     return body[:end + 2] if end >= 0 else None
 

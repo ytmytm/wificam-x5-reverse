@@ -36,8 +36,8 @@ if id homeassistant >/dev/null 2>&1; then
     HA_CAMERA="$HA_DIR/x5_camera.yaml"
     cp -p "$HA_CONFIG" "$HA_CONFIG.x5-backup-$(date +%Y%m%d-%H%M%S)-$$"
     install -o homeassistant -g homeassistant -m 0644 "$ROOT/x5-ha-camera.yaml" "$HA_CAMERA"
-    if ! grep -Eq '^[[:space:]]*ffmpeg:' "$HA_CONFIG"; then
-        printf '\n# TXW817 X5 local RTSP camera\nffmpeg:\n' >> "$HA_CONFIG"
+    if ! grep -Eq '^[[:space:]]*stream:' "$HA_CONFIG"; then
+        printf '\n# TXW817 X5 local RTSP camera\nstream:\n' >> "$HA_CONFIG"
     fi
     if ! grep -Eq '^[[:space:]]*camera:[[:space:]]*!include[[:space:]]+x5_camera.yaml' "$HA_CONFIG"; then
         printf 'camera: !include x5_camera.yaml\n' >> "$HA_CONFIG"

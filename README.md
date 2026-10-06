@@ -164,8 +164,9 @@ copied directly into RTSP.
 
 The publisher consumes the viewer's local MJPEG and PCM endpoints, so the
 camera negotiation remains in `x5-viewer.service` and the RTSP layer retries
-gracefully when the camera is offline. The installation also adds an FFmpeg
-Camera entry to the existing Home Assistant configuration on the same host,
+gracefully when the camera is offline. The installation also adds a Generic
+Camera entry with an RTSP `stream_source` to the existing Home Assistant
+configuration on the same host,
 after making a timestamped backup. The installer attempts to validate the
 configuration before restarting Home Assistant; if the old HA environment
 cannot finish its dependency check, it leaves HA running and reports that
@@ -303,7 +304,8 @@ materials:
 - [FFmpeg RTP/JPEG depacketizer](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/rtpdec_jpeg.c);
 - [ACTi Streaming SDK guide](https://fen.home.pl/pub/webFTP/sterowniki/Acti/SDK/ACTi_SDK-10000_C_SDK_Programming_Guide-v1.2.33.pdf) — useful documentation of the same RTP/JPEG header layout;
 - [MediaMTX releases](https://github.com/bluenviron/mediamtx/releases) — lightweight RTSP server used by the optional output layer;
-- [Home Assistant FFmpeg Camera](https://www.home-assistant.io/integrations/camera.ffmpeg/) — configuration model used for the local RTSP camera.
+- [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — configuration model used for the local RTSP camera;
+- [Home Assistant Stream](https://www.home-assistant.io/integrations/stream/) — continuous stream proxy used by the dashboard.
 
 The private `.pcap` files in this working tree are the primary evidence for
 this particular camera and are intentionally excluded from Git.
