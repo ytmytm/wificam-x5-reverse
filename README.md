@@ -15,6 +15,7 @@ not require Docker, Node.js, npm, or Python packages.
 
 - local web preview at `/stream.mjpg`;
 - browser audio at `/audio.pcm` (signed little-endian PCM16, 8 kHz mono);
+- runtime camera selection in the web UI by UID and LAN IP;
 - browser control page at `/` with LED, IR, flip, and quality controls;
 - JSON health endpoint at `/status`;
 - cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
@@ -116,6 +117,20 @@ camera mute command.
 
 The viewer remains running when the camera is absent. It reports `offline` or
 `negotiated` in `/status` and retries automatically.
+
+## Selecting a camera in the web UI
+
+The control page displays the current `X5_UID` and `X5_CAMERA_IP`. Enter the
+numeric UID and the camera's current LAN address, then click **Wybierz kamerę**.
+The running process switches target and renegotiates the stream; a service
+restart is not needed. This selection is runtime-only and is not written back
+to `/etc/x5-viewer.env`, so use that file for the boot-time default.
+
+The router's DHCP log/lease table can provide the LAN IP and MAC address. In
+the captures used for this project, the camera did not advertise its cloud
+UID in a useful LAN broadcast; the UID came from the mobile-app/cloud API
+traffic. Therefore the UI intentionally requires both values rather than
+guessing a UID from an IP or MAC address.
 
 ## Obtaining the token once
 
