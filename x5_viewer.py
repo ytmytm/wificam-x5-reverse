@@ -339,6 +339,19 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 state.remove_audio_client(client)
             return
+        if self.path == "/snapshot.jpg":
+            with state.lock:
+                jpeg = state.jpeg
+            if not jpeg:
+                self.send_error(503, "No camera frame available")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.send_header("Content-Length", str(len(jpeg)))
+            self.end_headers()
+            self.wfile.write(jpeg)
+            return
         if self.path != "/stream.mjpg":
             self.send_error(404)
             return

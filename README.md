@@ -165,8 +165,10 @@ copied directly into RTSP.
 The publisher consumes the viewer's local MJPEG and PCM endpoints, so the
 camera negotiation remains in `x5-viewer.service` and the RTSP layer retries
 gracefully when the camera is offline. On this older Home Assistant/ARMv7
-installation, the autoconfig uses the local MJPEG endpoint for the dashboard;
-the RTSP endpoint remains available for clients that support it.
+installation, the autoconfig uses Generic Camera with the local single-frame
+`/snapshot.jpg` endpoint. This avoids the optional `stream` integration and
+its NumPy dependency, which is not buildable in the current old HA environment.
+The RTSP endpoint remains available for clients that support it.
 after making a timestamped backup. The installer attempts to validate the
 configuration before restarting Home Assistant; if the old HA environment
 cannot finish its dependency check, it leaves HA running and reports that
@@ -305,7 +307,7 @@ materials:
 - [ACTi Streaming SDK guide](https://fen.home.pl/pub/webFTP/sterowniki/Acti/SDK/ACTi_SDK-10000_C_SDK_Programming_Guide-v1.2.33.pdf) — useful documentation of the same RTP/JPEG header layout;
 - [MediaMTX releases](https://github.com/bluenviron/mediamtx/releases) — lightweight RTSP server used by the optional output layer;
 - [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — RTSP configuration reference;
-- [Home Assistant MJPEG Camera](https://www.home-assistant.io/integrations/mjpeg/) — lightweight dashboard configuration used on the old HA host.
+- [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — dashboard snapshot configuration used on the old HA host.
 
 The private `.pcap` files in this working tree are the primary evidence for
 this particular camera and are intentionally excluded from Git.
