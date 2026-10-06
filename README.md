@@ -170,10 +170,9 @@ single-frame `/snapshot.jpg` endpoint and `rtsp://127.0.0.1:8554/x5` as its
 stream source. The RTSP stream is handled by HA's `stream` integration; the
 snapshot remains a fallback when no camera frame is currently available.
 
-The installer configures low-latency HLS (`segment_duration: 2`,
-`part_duration: 0.5`). HA 2023.10 otherwise defaults to roughly six-second
-HLS segments, which causes a visible loading pause followed by accelerated
-playback in the browser.
+The installer configures stable non-LL HLS. HA 2023.10's LL-HLS mode can
+repeatedly rebuffer in older browsers, even when the RTSP input is healthy;
+the trade-off is a few seconds of additional latency.
 
 The publisher declares the camera's measured input rate explicitly as 8 FPS.
 Without `-framerate 8`, FFmpeg assumes 25 FPS for the multipart MJPEG input;
@@ -214,6 +213,11 @@ address and click **Wybierz po IP**.
 The running process switches target and renegotiates the stream; a service
 restart is not needed. This selection is runtime-only and is not written back
 to `/etc/x5-viewer.env`, so use that file for the boot-time default.
+
+The browser demo is only a diagnostic UI. For the deployed Odroid setup,
+`X5_HTTP_HOST=127.0.0.1` keeps it off the LAN while its internal endpoints
+remain available to Home Assistant and the RTSP publisher. Set it to
+`0.0.0.0` temporarily if the demo needs to be opened from another machine.
 
 The router's DHCP log/lease table can provide the LAN IP and MAC address. In
 the captures used for this project, the camera did not advertise its cloud
