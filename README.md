@@ -304,8 +304,8 @@ unavailable, RTSP and camera negotiation continue normally. MQTT is used for
 control and discovery, not for video; MQTT Camera would send individual JPEG
 messages rather than a low-latency stream.
 
-The installer configures stable non-LL HLS (`ll_hls: false`). On the tested
-older HA/browser combination, LL-HLS could play the initial playlist and then
+The installer configures stable non-LL HLS (`ll_hls: false`). On this tested
+HA 2023.10.3/browser combination, LL-HLS could play the initial playlist and then
 stop requesting usable subsequent fragments. Non-LL HLS adds several seconds
 of latency, but avoids that failure mode. Treat LL-HLS as experimental on this
 installation.
@@ -366,13 +366,15 @@ persistent; leaving a YAML definition in place can create a second
 `WiFiCam X5 <UID>` entity after a later restart. A stale `x5_camera.yaml` file by
 itself does nothing unless it is included from `configuration.yaml`.
 
-The Home Assistant service also starts with `--skip-pip-packages numpy`. HA
-2023.10 requests exactly `numpy==1.26.0`, but ARMv7/Python 3.11 has no matching
-binary wheel and the installed GCC 7.5 cannot build it (NumPy 1.26 requires
-GCC 8.4+). NumPy 1.23.2 is already installed and is sufficient for the
-currently used integrations; skipping only this package prevents a failed
-source build from delaying every HA boot. Revisit this override when upgrading
-Home Assistant or its stream integration.
+The Home Assistant service on this particular server also starts with
+`--skip-pip-packages numpy`. This installation runs HA 2023.10.3 on Python
+3.11/ARMv7 with GCC 7.5: its dependency resolver requests `numpy==1.26.0`,
+there is no matching wheel for this exact environment, and the local compiler
+cannot build it. NumPy 1.23.2 is already installed and is sufficient for the
+integrations used here; skipping only this package prevents the failed source
+build from delaying this server's boot. This is a deployment-specific
+workaround, not a general Home Assistant or ARMv7 requirement. Revisit it
+when upgrading this Home Assistant installation or its stream integration.
 
 ### Boot order and camera offline behavior
 
@@ -464,7 +466,7 @@ RTSP itself is absent, fix the publisher/camera layer first.
 | `x5-viewer.service` | optional diagnostic HTTP service; disabled in RTSP mode |
 | `x5-rtsp-publish.service` | always-on camera receiver and FFmpeg publisher |
 | `x5-mediamtx.service` | always-on RTSP endpoint |
-| `home-assistant-x5.conf` | HA boot ordering and NumPy workaround |
+| `home-assistant-x5.conf` | HA boot ordering and this server's NumPy workaround |
 
 The receiver binds UDP `0.0.0.0:50001`. MediaMTX listens on TCP `8554`. The
 diagnostic viewer, when enabled, listens on HTTP `5080`; in the deployed setup
