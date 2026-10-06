@@ -1,4 +1,4 @@
 - platform: generic
-  name: WiFiCam X5
+  name: WiFiCam X5 276642521291
   stream_source: rtsp://127.0.0.1:8554/x5
   rtsp_transport: tcp

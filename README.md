@@ -331,7 +331,8 @@ source:
 rtsp://127.0.0.1:8554/x5
 ```
 
-The camera entity used during development is `camera.wificam_x5`. The RTSP
+The camera entity used during development is
+`camera.wificam_x5_276642521291`. The RTSP
 publisher and HA run on the same Odroid, so HA must use `127.0.0.1`, not the
 Odroid's LAN address. The browser connects to HA, while HA connects locally to
 MediaMTX.
@@ -362,7 +363,7 @@ intentionally replace a working RTSP source.
 After Home Assistant imports the Generic Camera entry, do not keep a second
 `camera: !include x5_camera.yaml` definition. The imported config entry is
 persistent; leaving a YAML definition in place can create a second
-`WiFiCam X5` entity after a later restart. A stale `x5_camera.yaml` file by
+`WiFiCam X5 <UID>` entity after a later restart. A stale `x5_camera.yaml` file by
 itself does nothing unless it is included from `configuration.yaml`.
 
 The Odroid's HA service also starts with `--skip-pip-packages numpy`. HA
