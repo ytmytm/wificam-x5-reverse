@@ -1,4 +1,40 @@
-# TXW817 cloud-control protocol notes
+# TXW817 / WiFiCam X5 protocol notes
+
+These notes describe the currently implemented path from the mobile-app
+capture to the local RTSP stream. The implementation is not a complete
+replacement for the vendor cloud: the cloud API is still needed to request a
+live session and to send camera controls.
+
+## End-to-end session
+
+The deployed receiver uses this sequence:
+
+```text
+UID + bearer token
+  -> vendor HTTP API: send-stun-addr
+  -> vendor HTTP API: notify-live-event
+  -> vendor HTTP API: stun-addr/<UID> returns camera UDP port
+  -> local UDP: camera sends JPEG fragments and G.711 audio
+  -> local RTSP: FFmpeg publishes H.264/G.711 to MediaMTX
+```
+
+The camera's media packets travel directly over the LAN after negotiation. The
+server registers its local address as both the public and private endpoint,
+because the receiver and camera are on the same LAN. The negotiated camera
+port can change between sessions and must not be hard-coded.
+
+Negotiation success only means that the cloud returned a UDP endpoint. It does
+not prove that the camera has started sending media. The receiver therefore
+tracks separately:
+
+- cloud negotiation;
+- received UDP datagrams;
+- assembled video frames;
+- the RTSP publisher session.
+
+If negotiation succeeds but no UDP packets arrive, the camera has not started
+or has paused the media flow. The receiver retries without restarting Home
+Assistant.
 
 The stock firmware does not answer the `iLnk/PPPP` LAN discovery packet. It
 opens a TCP control session to a cloud server on port `8882`. In the capture,
@@ -66,6 +102,70 @@ cloud -> camera:        86 86 83 01 ... 03 00 01 30 ... 0d
 The camera sends a short response frame after each command. It also sends
 periodic status/heartbeat frames, so command correlation must use timestamps
 and the command body rather than frame count alone.
+
+## Local UDP keepalive
+
+The mobile-app capture showed the following short exchange on the negotiated
+camera UDP socket:
+
+```text
+camera -> app: `d.msg from firmware`
+app -> camera: `App send heart for stun`
+```
+
+The receiver answers the first message immediately. It also sends the observed
+periodic messages below while a camera endpoint is known:
+
+```text
+`DrApp send hello`
+`App send heart for stun`
+```
+
+The firmware heartbeat response is important: a receiver that only sends the
+timer-based heartbeat can work briefly and then lose the camera media session.
+The exact timeout and meaning of the camera-side message are not fully known.
+
+The receiver does not renegotiate a healthy session on a fixed timer. It waits
+for a real video timeout (currently 30 seconds), because a new live-event
+request can itself cause a temporary media pause. During a shorter pause, the
+RTSP publisher repeats the last complete JPEG at 8 FPS to keep the downstream
+RTSP/HLS pipeline alive. MediaMTX tolerates up to 60 seconds without RTSP
+traffic; after that the publisher and HA clients may need to reconnect.
+
+## Media packet formats
+
+Video is carried as an RTP/JPEG-like UDP payload. The receiver recognizes
+video packets beginning with `80 1a` or `80 9a`. The packet layout used by the
+current camera is:
+
+```text
+80 1a/9a <camera-specific fields>
+<6-byte frame identifier>
+<4-byte big-endian fragment offset>
+<fragment payload>
+```
+
+The first fragment contains a 140-byte camera/JPEG header. Subsequent fragment
+offsets count JPEG entropy bytes and have an 8-byte transport prefix. A frame
+is accepted only when all offsets are contiguous and the reconstructed JPEG
+ends with `ff d9`; incomplete frames are discarded to avoid green/corrupted
+output. `rtp_jpeg.py` rebuilds the camera-specific header and quantization
+tables into a regular JPEG interchange stream.
+
+The camera's measured video rate is about 8 FPS and the captured dimensions
+were `640x480` for all tested image profiles. The RTSP publisher explicitly
+uses 8 FPS so FFmpeg does not assume 25 FPS and create accelerating buffered
+playback.
+
+Audio is RTP payload type `128`. After the 12-byte RTP header, packets contain
+252 bytes of G.711 μ-law samples at 8 kHz, mono. The receiver converts this to
+signed little-endian PCM16 before passing it to FFmpeg, which publishes G.711
+μ-law in the RTSP track.
+
+The browser viewer exposes video and audio as separate tracks. Home Assistant
+reads the RTSP output through its `stream` integration, normally producing HLS
+for the browser. HLS buffering is downstream of the camera protocol and cannot
+repair a missing UDP media session.
 
 ## Quality and audio caveat
 
