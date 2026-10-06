@@ -224,6 +224,13 @@ class Cloud:
         log.info("camera UDP endpoint reported as %s:%d", self.camera_ip, port)
         return port
 
+    def keepalive(self) -> None:
+        """Refresh the vendor live event without replacing a healthy UDP port."""
+        self.get("/api/v1/ipc/send-stun-addr", publicIp=self.private_ip,
+                 publicPort=str(LISTEN_PORT), privateIp=self.private_ip,
+                 privatePort=str(LISTEN_PORT), uid=self.uid)
+        self.get("/api/v1/ipc/notify-live-event", eventType="1", uid=self.uid)
+
 
 def assemble(groups, frame_id):
     fragments = groups.pop(frame_id, {})
@@ -253,6 +260,7 @@ def udp_worker() -> None:
     sock.settimeout(1.0)
     groups = {}  # type: Dict[bytes, Dict[int, bytes]]
     next_negotiation = 0.0
+    next_live_keepalive = 0.0
     next_heartbeat = 0.0
     next_stats = time.monotonic() + LOG_INTERVAL
     packet_count = 0
@@ -274,6 +282,7 @@ def udp_worker() -> None:
             last_video_packet_at = 0.0
             config_generation = generation
             next_negotiation = 0.0
+            next_live_keepalive = 0.0
         # Do not renegotiate a healthy session.  The camera can pause its
         # media flow while processing a new live-event request; doing this on
         # a fixed timer created avoidable RTSP gaps every ~20 seconds.  Only
@@ -294,6 +303,13 @@ def udp_worker() -> None:
                 state.set_status("offline", str(exc)[:160])
                 log.warning("negotiation failed camera=%s: %s", camera_ip, exc)
                 next_negotiation = now + 10
+        if camera_port and now >= next_live_keepalive and not session_stale:
+            try:
+                Cloud(uid, camera_ip).keepalive()
+                log.debug("live session keepalive sent camera=%s", camera_ip)
+            except Exception as exc:
+                log.warning("live session keepalive failed camera=%s: %s", camera_ip, exc)
+            next_live_keepalive = now + 20
         if camera_port and now >= next_heartbeat:
             try:
                 sock.sendto(b"DrApp send hello", (camera_ip, camera_port))

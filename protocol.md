@@ -132,6 +132,11 @@ RTSP publisher repeats the last complete JPEG at 8 FPS to keep the downstream
 RTSP/HLS pipeline alive. MediaMTX tolerates up to 60 seconds without RTSP
 traffic; after that the publisher and HA clients may need to reconnect.
 
+While media is healthy, the receiver refreshes the vendor live event every 20
+seconds, matching the mobile application's cloud-assisted session lifetime.
+This is a keepalive, not a new UDP-port negotiation, so it does not
+intentionally replace a working RTSP source.
+
 ## Media packet formats
 
 Video is carried as an RTP/JPEG-like UDP payload. The receiver recognizes

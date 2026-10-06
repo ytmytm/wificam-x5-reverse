@@ -283,6 +283,11 @@ keeps FFmpeg and MediaMTX alive instead of turning a temporary missing frame
 into an RTSP reconnect and an HLS loading cycle. If no new video packets arrive
 beyond that grace period, the normal negotiation and restart logic takes over.
 
+While media is healthy, the receiver refreshes the vendor live event every 20
+seconds, matching the mobile application's cloud-assisted session lifetime.
+This is a keepalive, not a new UDP-port negotiation, so it does not
+intentionally replace a working RTSP source.
+
 After Home Assistant imports the Generic Camera entry, do not keep a second
 `camera: !include x5_camera.yaml` definition. The imported config entry is
 persistent; leaving a YAML definition in place can create a second
