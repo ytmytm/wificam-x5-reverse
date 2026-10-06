@@ -1,0 +1,19 @@
+[Unit]
+Description=TXW817 X5 local web viewer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/x5-viewer
+EnvironmentFile=-/etc/x5-viewer.env
+ExecStart=/usr/bin/python3 /opt/x5-viewer/x5_viewer.py
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

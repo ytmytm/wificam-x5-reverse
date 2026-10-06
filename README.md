@@ -1,0 +1,192 @@
+# TXW817 / WiFiCam X5 local viewer
+
+This project provides a small, dependency-free Python server for the low-cost
+WiFi camera sold as **X5** and identified by its firmware as **TXW817**. It
+receives the camera's local UDP MJPEG stream and exposes it as a browser
+preview.
+
+The implementation was tested on an ARMv7 Odroid running Ubuntu 18.04. It does
+not require Docker, Node.js, npm, or Python packages.
+
+> This is an independent reverse-engineering project. Use it only with cameras
+> and networks you own or are authorized to test.
+
+## Features
+
+- local web preview at `/stream.mjpg`;
+- browser control page at `/` with LED, IR, flip, and quality controls;
+- JSON health endpoint at `/status`;
+- cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
+- automatic retry when the camera or cloud API is unavailable;
+- systemd autostart and graceful offline behavior;
+- Python 3.6-compatible runtime code for older ARM systems.
+
+## Current device assumptions
+
+The defaults describe the camera used during development, but all values can
+be overridden through the environment file:
+
+| Setting | Default |
+| --- | --- |
+| Camera IP | `192.168.2.158` |
+| Camera UID | `276642521291` |
+| UDP listen port | `50001` |
+| HTTP port | `5080` |
+| API host | `http://ipc.gps555.net` |
+| Application ID | see `config.env.example` |
+
+The API currently uses an HTTP bearer token. The token is not included in this
+repository and must be supplied locally as `X5_API_TOKEN`.
+
+## Quick start
+
+Copy the repository to the target machine and run:
+
+```sh
+cd x5-reverse
+cp config.env.example config.env
+$EDITOR config.env
+sudo ./install.sh config.env
+```
+
+The installer places the program in `/opt/x5-viewer`, installs the systemd
+unit, enables it at boot, and restarts it. The environment file is copied to
+`/etc/x5-viewer.env` with mode `0600`.
+
+Check the service:
+
+```sh
+systemctl status x5-viewer.service
+curl http://127.0.0.1:5080/status
+```
+
+Open the preview from a LAN browser:
+
+```text
+http://<odroid-ip>:5080/stream.mjpg
+```
+
+Open `http://<odroid-ip>:5080/` for the control page. The implemented command
+mapping is LED (`3`), IR (`7`), vertical flip (`8`), horizontal flip (`9`),
+and image profile (`22`, values `0`/`1`/`2`). The capture confirms that these
+three profile values are sent, but all captured video headers remained
+`640×480`, so their exact SD/HD/FHD meaning is intentionally not claimed yet.
+
+The app capture did include two audio toggles. No camera command or separate
+audio-control request appeared; 268-byte audio datagrams continued throughout
+the session. This strongly suggests that audio is muted locally in the mobile
+player. The current MJPEG endpoint therefore marks audio as unavailable.
+
+The viewer remains running when the camera is absent. It reports `offline` or
+`negotiated` in `/status` and retries automatically.
+
+## Obtaining the token once
+
+The official mobile application is currently needed only to obtain the API
+bearer token and to confirm that the camera can start a live session. The token
+can be captured once on the local router; it is then stored only on the viewer
+machine.
+
+1. Find the phone's LAN address and the camera address.
+2. On the router, start a private capture:
+
+   ```sh
+   tcpdump -i br-lan -s 0 -U -w /tmp/x5-full.pcap \
+     'host <camera-ip> or host <phone-ip>'
+   ```
+
+3. Open the camera in the official app, sign in if necessary, and open live
+   preview. Wait until video is visible, then stop `tcpdump`.
+4. Copy the pcap to a trusted development machine. Do not commit it: it can
+   contain bearer tokens, account data, and device identifiers.
+5. Extract the token locally:
+
+   ```sh
+   ./tools/extract_token.sh /path/to/x5-full.pcap
+   ```
+
+   The script prints the token once. Redirect it only to a protected temporary
+   file or paste it directly into `/etc/x5-viewer.env`; never put it in Git.
+
+The extractor intentionally accepts only HTTP `Authorization: Bearer` headers
+from the supplied capture. If the app changes to HTTPS, the token cannot be
+recovered from a passive LAN capture; use the app's own logged-in session and
+do not attempt to bypass TLS.
+
+## Configuration
+
+Start with [`config.env.example`](config.env.example). At minimum:
+
+```dotenv
+X5_UID=276642521291
+X5_CAMERA_IP=192.168.2.158
+X5_API_TOKEN=replace-with-a-local-token
+```
+
+Other useful variables are `X5_HTTP_PORT`, `X5_LISTEN_PORT`, `X5_API_BASE`,
+`X5_HTTP_HOST`, and `X5_LISTEN_HOST`. Keep the resulting file outside the Git
+working tree or name it `config.env`; both are ignored by `.gitignore`.
+
+## Development and offline replay
+
+Syntax-check the code without installing dependencies:
+
+```sh
+./test.sh
+```
+
+If a private UDP pcap is available, `rtp_jpeg.py` can depacketize it and write
+JPEG frames for inspection:
+
+```sh
+python3 rtp_jpeg.py private-capture.pcap --out /tmp/x5-jpegs
+```
+
+The repository's `.gitignore` excludes pcap, raw media, logs, secrets, and
+Python cache files. Existing local captures are research artefacts and must
+remain private.
+
+## Protocol notes
+
+The media packets use an RFC 2435-style JPEG payload. The firmware repeats the
+JPEG/restart header in fragments and places the quantization tables in the first
+fragment. `rtp_jpeg.py` reconstructs the fragments and creates a regular JPEG
+interchange stream for the HTTP multipart response.
+
+The control protocol and observed command mappings are documented in:
+
+- [`protocol.md`](protocol.md)
+- [`protocol.py`](protocol.py)
+- [`extract_frames.py`](extract_frames.py)
+
+The original `cam-reverse` implementation is not required by this project; its
+directory is kept separately in the parent workspace for historical reference.
+
+## Security notes
+
+- The API endpoint observed during reverse engineering uses plain HTTP. Treat
+  the token as a password and keep the viewer on a trusted LAN.
+- Rotate/revoke the token if the capture or environment file leaves the trusted
+  machines.
+- Do not publish `.pcap`, `.pcapng`, `config.env`, or shell history containing
+  a token.
+- This project currently exposes the MJPEG stream without authentication. Do
+  not bind it to an untrusted interface or forward port `5080` to the Internet.
+
+## Research sources
+
+The investigation used the following public references and user-provided
+materials:
+
+- [DavidVentura/cam-reverse](https://github.com/DavidVentura/cam-reverse) — related camera reverse engineering and the initial comparison point;
+- [Elektroda: WiFiCam X5, topic 4150688](https://www.elektroda.pl/rtvforum/topic4150688.html);
+- [Elektroda: WiFiCam X5, topic 4033757](https://www.elektroda.com/rtvforum/topic4033757.html);
+- [Elektroda: WiFiCam X5, topic 4117962](https://www.elektroda.com/rtvforum/topic4117962.html);
+- [Elektroda: related TXW817 discussion, topic 4147085](https://www.elektroda.com/rtvforum/topic4147085.html);
+- [TXW817 manufacturer datasheet](https://taixin-semi.com/zh/docs/txw817/latest/TXW817%20%E6%95%B0%E6%8D%AE%E6%89%8B%E5%86%8C?navigation=1&series=txw81x) — confirms the chip's MJPEG/YUV420 capabilities;
+- [RFC 2435: RTP Payload Format for JPEG-compressed Video](https://www.rfc-editor.org/rfc/rfc2435.html);
+- [FFmpeg RTP/JPEG depacketizer](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/rtpdec_jpeg.c);
+- [ACTi Streaming SDK guide](https://fen.home.pl/pub/webFTP/sterowniki/Acti/SDK/ACTi_SDK-10000_C_SDK_Programming_Guide-v1.2.33.pdf) — useful documentation of the same RTP/JPEG header layout.
+
+The private `.pcap` files in this working tree are the primary evidence for
+this particular camera and are intentionally excluded from Git.

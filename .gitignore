@@ -1,0 +1,10 @@
+*.pcap
+*.pcapng
+*.log
+secrets*
+config.env
+*.env
+*.token
+private/
+*.bin
+__pycache__/
