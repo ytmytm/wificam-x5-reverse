@@ -1,0 +1,17 @@
+[Unit]
+Description=MediaMTX RTSP server for TXW817 X5
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+ExecStart=/usr/local/bin/mediamtx /etc/x5-mediamtx.yml
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

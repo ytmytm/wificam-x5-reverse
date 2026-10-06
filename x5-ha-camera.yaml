@@ -1,0 +1,4 @@
+- platform: ffmpeg
+  name: WiFiCam X5
+  input: rtsp://127.0.0.1:8554/x5
+  extra_arguments: -rtsp_transport tcp

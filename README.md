@@ -21,6 +21,8 @@ not require Docker, Node.js, npm, or Python packages.
 - cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
 - automatic retry when the camera or cloud API is unavailable;
 - systemd autostart and graceful offline behavior;
+- optional local RTSP output at `rtsp://<odroid-ip>:8554/x5`;
+- optional Home Assistant FFmpeg Camera autoconfiguration;
 - Python 3.6-compatible runtime code for older ARM systems.
 
 ## Current device assumptions
@@ -140,6 +142,30 @@ to a vendor server on port `8882`, while the app used `ipc.gps555.net` and the
 camera UID. We have not established whether the vendor hostname is compiled
 into firmware or obtained from another configuration/DNS mechanism, so this
 remains an evidence-based hypothesis rather than a confirmed firmware detail.
+
+## RTSP and Home Assistant
+
+On an ARMv7 Odroid with FFmpeg installed, install the optional RTSP layer:
+
+```sh
+sudo ./install-rtsp.sh
+```
+
+This installs MediaMTX, starts a local RTSP publisher, and creates the stream:
+
+```text
+rtsp://<odroid-ip>:8554/x5
+```
+
+The publisher consumes the viewer's local MJPEG and PCM endpoints, so the
+camera negotiation remains in `x5-viewer.service` and the RTSP layer retries
+gracefully when the camera is offline. The installation also adds an FFmpeg
+Camera entry to the existing Home Assistant configuration on the same host,
+after making a timestamped backup. The installer attempts to validate the
+configuration before restarting Home Assistant; if the old HA environment
+cannot finish its dependency check, it leaves HA running and reports that
+condition. MediaMTX is used as the RTSP server because
+FFmpeg alone is an encoder/publisher, not a persistent RTSP server.
 
 ## Selecting a camera in the web UI
 
@@ -270,7 +296,9 @@ materials:
 - [TXW817 manufacturer datasheet](https://taixin-semi.com/zh/docs/txw817/latest/TXW817%20%E6%95%B0%E6%8D%AE%E6%89%8B%E5%86%8C?navigation=1&series=txw81x) — confirms the chip's MJPEG/YUV420 capabilities;
 - [RFC 2435: RTP Payload Format for JPEG-compressed Video](https://www.rfc-editor.org/rfc/rfc2435.html);
 - [FFmpeg RTP/JPEG depacketizer](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/rtpdec_jpeg.c);
-- [ACTi Streaming SDK guide](https://fen.home.pl/pub/webFTP/sterowniki/Acti/SDK/ACTi_SDK-10000_C_SDK_Programming_Guide-v1.2.33.pdf) — useful documentation of the same RTP/JPEG header layout.
+- [ACTi Streaming SDK guide](https://fen.home.pl/pub/webFTP/sterowniki/Acti/SDK/ACTi_SDK-10000_C_SDK_Programming_Guide-v1.2.33.pdf) — useful documentation of the same RTP/JPEG header layout;
+- [MediaMTX releases](https://github.com/bluenviron/mediamtx/releases) — lightweight RTSP server used by the optional output layer;
+- [Home Assistant FFmpeg Camera](https://www.home-assistant.io/integrations/camera.ffmpeg/) — configuration model used for the local RTSP camera.
 
 The private `.pcap` files in this working tree are the primary evidence for
 this particular camera and are intentionally excluded from Git.
