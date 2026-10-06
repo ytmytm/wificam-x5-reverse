@@ -240,6 +240,57 @@ Home Assistant/ARMv7 installation, Generic Camera uses
 `rtsp://127.0.0.1:8554/x5` as its stream source. The RTSP stream is handled by
 HA's `stream` integration.
 
+The Generic Camera entity has no LED or IR controls. The RTSP publisher also
+exposes a small control-only HTTP endpoint on `127.0.0.1:5081`; the web viewer
+is not required and no LAN control port is opened. It accepts the same LED/IR
+commands as the viewer. Add these to Home Assistant to create optimistic
+switches:
+
+```yaml
+rest_command:
+  x5_led_on:
+    url: http://127.0.0.1:5081/api/command
+    method: POST
+    content_type: application/json
+    payload: '{"command":"led","value":1}'
+  x5_led_off:
+    url: http://127.0.0.1:5081/api/command
+    method: POST
+    content_type: application/json
+    payload: '{"command":"led","value":0}'
+  x5_ir_on:
+    url: http://127.0.0.1:5081/api/command
+    method: POST
+    content_type: application/json
+    payload: '{"command":"ir","value":1}'
+  x5_ir_off:
+    url: http://127.0.0.1:5081/api/command
+    method: POST
+    content_type: application/json
+    payload: '{"command":"ir","value":0}'
+
+template:
+  - switch:
+      - name: WiFiCam X5 LED
+        unique_id: wificam_x5_led
+        optimistic: true
+        turn_on:
+          - service: rest_command.x5_led_on
+        turn_off:
+          - service: rest_command.x5_led_off
+      - name: WiFiCam X5 IR
+        unique_id: wificam_x5_ir
+        optimistic: true
+        turn_on:
+          - service: rest_command.x5_ir_on
+        turn_off:
+          - service: rest_command.x5_ir_off
+```
+
+The switches show the last requested state only. This camera protocol exposes
+no reliable state-read operation, so HA cannot verify the physical LED/IR
+state after a restart or a manual change in the vendor app.
+
 The installer configures stable non-LL HLS (`ll_hls: false`). On the tested
 older HA/browser combination, LL-HLS could play the initial playlist and then
 stop requesting usable subsequent fragments. Non-LL HLS adds several seconds

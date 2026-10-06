@@ -9,8 +9,11 @@ import os
 import subprocess
 import threading
 import time
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 
-from x5_viewer import state, udp_worker
+from x5_viewer import Cloud, COMMANDS, state, udp_worker
 
 
 FFMPEG = os.getenv("X5_FFMPEG", "/usr/local/bin/ffmpeg")
@@ -19,6 +22,46 @@ VIDEO_GRACE_SECONDS = float(os.getenv("X5_VIDEO_GRACE_SECONDS", "30"))
 # This is intentionally small.  A large FFmpeg input queue turns a temporary
 # camera pause into a long replay of old MJPEG/PCM data.
 INPUT_QUEUE_SIZE = int(os.getenv("X5_FFMPEG_INPUT_QUEUE", "1"))
+CONTROL_HOST = os.getenv("X5_CONTROL_HOST", "127.0.0.1")
+CONTROL_PORT = int(os.getenv("X5_CONTROL_PORT", "5081"))
+
+
+class ControlServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
+
+class ControlHandler(BaseHTTPRequestHandler):
+    def log_message(self, _format, *_args):
+        return
+
+    def do_POST(self):
+        if self.path != "/api/command":
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            request = json.loads(self.rfile.read(length).decode("utf-8"))
+            name = request["command"]
+            value = int(request["value"])
+            command = COMMANDS[name]
+            if value not in (0, 1, 2):
+                raise ValueError("unsupported command value")
+            result = Cloud().send_command(command, value)
+            body = {"ok": True, "command": name, "value": value, "result": result}
+            encoded = json.dumps(body).encode("utf-8")
+            self.send_response(200)
+        except Exception as exc:
+            encoded = json.dumps({"ok": False, "error": str(exc)}).encode("utf-8")
+            self.send_response(502)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
+def start_control_server() -> None:
+    server = ControlServer((CONTROL_HOST, CONTROL_PORT), ControlHandler)
+    threading.Thread(target=server.serve_forever, name="x5-control", daemon=True).start()
 
 
 def write_all(fd: int, data: bytes) -> None:
@@ -107,6 +150,7 @@ def publish_once() -> int:
 
 
 def main() -> None:
+    start_control_server()
     threading.Thread(target=udp_worker, name="x5-udp", daemon=True).start()
     while True:
         publish_once()
