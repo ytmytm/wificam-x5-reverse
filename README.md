@@ -170,6 +170,11 @@ single-frame `/snapshot.jpg` endpoint and `rtsp://127.0.0.1:8554/x5` as its
 stream source. The RTSP stream is handled by HA's `stream` integration; the
 snapshot remains a fallback when no camera frame is currently available.
 
+After Home Assistant imports the Generic Camera entry, remove the temporary
+`camera: !include x5_camera.yaml` line from `configuration.yaml`. The imported
+config entry is persistent; leaving the YAML import in place can create a
+second `WiFiCam X5` entity after a later restart.
+
 The Odroid's HA service also starts with `--skip-pip-packages numpy`. HA
 2023.10 requests exactly `numpy==1.26.0`, but ARMv7/Python 3.11 has no matching
 binary wheel and the installed GCC 7.5 cannot build it (NumPy 1.26 requires
