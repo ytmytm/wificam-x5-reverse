@@ -1,46 +1,47 @@
-# TXW817 / WiFiCam X5 — lokalny odbiornik, RTSP i Home Assistant
+# TXW817 / WiFiCam X5 — local receiver, RTSP and Home Assistant
 
-Projekt odbiera obraz i audio z taniej kamery WiFi sprzedawanej jako **X5**,
-rozpoznawanej przez firmware jako **TXW817**. Media po zestawieniu sesji płyną
-bezpośrednio po LAN do serwera Home Assistant, a wynik jest publikowany jako
-RTSP. Sterowanie LED/IR jest wystawiane przez MQTT Discovery.
+This project receives video and audio from the low-cost WiFi camera sold as
+**X5**, identified by its firmware as **TXW817**. After the session is
+established, media travels directly over the LAN to the Home Assistant server
+and is published as RTSP. LED/IR control is exposed through MQTT Discovery.
 
-To niezależny projekt reverse-engineeringu. Używaj go tylko z własną kamerą i
-własną siecią.
+This is an independent reverse-engineering project. Use it only with cameras
+and networks that you own or are authorized to test.
 
-## 1. Co jest potrzebne
+## 1. Requirements
 
-Docelowo potrzebny jest stale działający serwer Home Assistant z Ubuntu/ARMv7,
-FFmpeg i dostępem do LAN. Testowana instalacja to HA 2023.10.3 na Pythonie
-3.11. Projekt nie wymaga Dockera, Node.js ani npm.
+The target is an always-on Home Assistant server running Ubuntu/ARMv7 with
+FFmpeg and LAN access. The tested installation is Home Assistant 2023.10.3 on
+Python 3.11. The project does not require Docker, Node.js or npm.
 
-Potrzebne są również:
+You also need:
 
-- kamera X5/TXW817;
-- telefon z aplikacją **[Z-IOT CAM z Google Play](https://play.google.com/store/apps/details?id=com.flu.flutter_wifi_camera)**;
-- router z DHCP i dostępem kamery do LAN;
-- jednorazowy dostęp aplikacji do vendorowej chmury podczas uzyskiwania tokenu;
-- broker MQTT, domyślnie `iotlocal.lan:1883`.
+- an X5/TXW817 camera;
+- a phone with **[Z-IOT CAM from Google Play](https://play.google.com/store/apps/details?id=com.flu.flutter_wifi_camera)**;
+- a router providing DHCP and LAN access for the camera;
+- one-time access to the vendor cloud through the mobile app while obtaining
+  the API token;
+- an MQTT broker, `iotlocal.lan:1883` by default.
 
-## 2. Pierwsza konfiguracja kamery
+## 2. Initial camera setup
 
-Na początku aplikacja vendora jest praktycznie niezbędna. Służy do:
+The vendor app is effectively required at the beginning. It is used to:
 
-1. zasilenia i zresetowania kamery, jeśli jest to wymagane;
-2. połączenia telefonu z hotspotem konfiguracyjnym kamery;
-3. przekazania kamerze danych domowej sieci WiFi;
-4. potwierdzenia, że kamera pojawia się w routerze i działa w podglądzie;
-5. odczytania/wynegocjowania UID oraz uzyskania ruchu, z którego można
-   wyciągnąć token API.
+1. power on and reset the camera if necessary;
+2. connect the phone to the camera's setup hotspot;
+3. provide the camera with the home WiFi credentials;
+4. verify that the camera appears in the router and works in the app;
+5. identify the UID and generate the traffic from which the API token can be
+   extracted.
 
-Według instrukcji dla tej rodziny urządzeń hotspot może mieć nazwę zaczynającą
-się od `ZIOT`. Po zakończeniu konfiguracji kamera powinna dostać adres DHCP,
-np. `192.168.2.158`. Aplikacja jest potrzebna do początkowego provisioningu;
-nasz serwer nie zastępuje tej procedury konfiguracji WiFi.
+Instructions for this camera family indicate that the setup hotspot may start
+with `ZIOT`. After setup, the camera should receive a DHCP address such as
+`192.168.2.158`. The app is required for the initial provisioning; this server
+does not replace the camera's WiFi setup procedure.
 
-## 3. UID, adres IP i token
+## 3. UID, IP address and token
 
-Do automatycznego startu potrzebne są trzy wartości:
+The automatic service needs three values:
 
 ```dotenv
 X5_UID=276642521291
@@ -50,11 +51,12 @@ X5_API_TOKEN=local-private-token
 
 ### UID
 
-UID to numeryczny identyfikator kamery używany przez API. Nie jest nim adres IP
-ani MAC. Najpewniejsze źródło to przechwycenie sesji live aplikacji i wyszukanie
-`uid=` albo pola JSON `uid`. UID pojawia się także w body komendy LED/IR.
+The UID is the numeric camera identifier used by the API. It is not the LAN IP
+address or the WiFi MAC address. The most reliable source is a capture of one
+live session from the mobile app; search it for `uid=` or a JSON field named
+`uid`. The UID also appears in the body of LED/IR commands.
 
-Można przeszukać prywatny capture lokalnie:
+You can search a private capture locally:
 
 ```sh
 strings /path/to/x5-full.pcap | rg -o \
@@ -63,36 +65,36 @@ strings /path/to/x5-full.pcap | rg -o \
 
 ### Token
 
-Token bearer wyciąga się jednorazowo z capture ruchu aplikacji. Na routerze,
-podczas gdy telefon otwiera podgląd kamery, uruchom prywatny capture:
+The bearer token is extracted once from the app's captured traffic. On the
+router, while the phone opens the camera preview, start a private capture:
 
 ```sh
 tcpdump -i br-lan -s 0 -U -w /tmp/x5-full.pcap \
   'host <camera-ip> or host <phone-ip>'
 ```
 
-W aplikacji zaloguj się, otwórz kamerę i poczekaj na widoczny obraz. Zatrzymaj
-`tcpdump`, skopiuj capture na zaufany komputer i uruchom:
+Sign in to the app, open the camera and wait until video is visible. Stop
+`tcpdump`, copy the capture to a trusted development machine, then run:
 
 ```sh
 ./tools/extract_token.sh /path/to/x5-full.pcap
 ```
 
-Skrypt wypisze gotowe linie `X5_API_TOKEN`, `X5_UID` i — jeśli uda się wykryć
-— `X5_CAMERA_IP`. Capture może zawierać token, dane konta i identyfikatory
-urządzeń; nie publikuj go i nie commituj do Git. Jeśli aplikacja przejdzie na
-HTTPS, pasywny capture może nie wystarczyć do odzyskania tokenu.
+The script prints ready-to-copy `X5_API_TOKEN`, `X5_UID` and, when detected,
+`X5_CAMERA_IP` lines. A capture may contain tokens, account data and device
+identifiers; do not publish or commit it. If the app switches to HTTPS, a
+passive capture may no longer be sufficient to recover the token.
 
-## 4. Konfiguracja prywatna
+## 4. Private configuration
 
-Skopiuj przykład i uzupełnij wartości:
+Copy the example and fill in the values:
 
 ```sh
 cp config.env.example config.env
 $EDITOR config.env
 ```
 
-Minimalna konfiguracja:
+Minimum configuration:
 
 ```dotenv
 X5_UID=276642521291
@@ -100,7 +102,7 @@ X5_CAMERA_IP=192.168.2.158
 X5_API_TOKEN=replace-with-a-local-token
 ```
 
-Najważniejsze opcje MQTT:
+Important MQTT options:
 
 ```dotenv
 X5_MQTT_BROKER=iotlocal.lan
@@ -109,14 +111,14 @@ X5_MQTT_PREFIX=wificam/x5
 X5_MQTT_DISCOVERY_PREFIX=homeassistant
 ```
 
-Nie wpisuj tokenu do plików śledzonych przez Git. `config.env` jest ignorowany,
-a na serwerze konfiguracja trafia do `/etc/x5-viewer.env` z prawami `0600`.
+Do not put the token in Git-tracked files. `config.env` is ignored, and on the
+server the configuration is installed as `/etc/x5-viewer.env` with mode `0600`.
 
-## 5. Instalacja i uruchomienie
+## 5. Installation and startup
 
-### Opcjonalny viewer diagnostyczny
+### Optional diagnostic viewer
 
-Viewer służy tylko do testów i nie jest potrzebny na co dzień:
+The viewer is for testing only and is not needed for daily operation:
 
 ```sh
 sudo ./install.sh config.env
@@ -124,35 +126,39 @@ systemctl status x5-viewer.service
 curl http://127.0.0.1:5080/status
 ```
 
-Podgląd: `http://<home-assistant-server-ip>:5080/`. Viewer udostępnia
-`/stream.mjpg`, `/audio.pcm`, `/status` i przyciski LED/IR. Nie uruchamiaj go
-jednocześnie z publisherem RTSP — oba procesy używają UDP `50001`.
+Open `http://<home-assistant-server-ip>:5080/`. The viewer provides
+`/stream.mjpg`, `/audio.pcm`, `/status` and LED/IR buttons. Do not run it at the
+same time as the RTSP publisher: both processes use UDP port `50001`.
 
-### Normalny tryb RTSP
+### Normal RTSP mode
 
-Jeśli środowisko nie było jeszcze instalowane, najpierw skopiuj prywatną
-konfigurację do `/etc/x5-viewer.env`:
+If the private environment has not been installed yet, first copy it to
+`/etc/x5-viewer.env`:
 
 ```sh
 sudo ./install.sh config.env
 ```
 
-Następnie uruchom normalny tryb RTSP:
+Then start the normal RTSP mode:
 
 ```sh
 sudo ./install-rtsp.sh
 ```
 
-Instalator instaluje MediaMTX i `python3-paho-mqtt`, kopiuje odbiornik do
-`/opt/x5-viewer`, wyłącza viewer diagnostyczny oraz włącza:
+The installer installs MediaMTX and `python3-paho-mqtt`, copies the receiver to
+`/opt/x5-viewer`, disables the diagnostic viewer and enables:
 
-- `x5-mediamtx.service` — serwer RTSP na TCP `8554`;
-- `x5-rtsp-publish.service` — negocjacja kamery, odbiór UDP i FFmpeg;
-- konfigurację kolejności startu względem Home Assistant.
+- `x5-mediamtx.service` — RTSP server on TCP port `8554`;
+- `x5-rtsp-publish.service` — camera negotiation, UDP receiver and FFmpeg;
+- startup ordering relative to Home Assistant.
 
-Stream: `rtsp://<home-assistant-server-ip>:8554/x5`.
+Stream URL:
 
-Kontrola usług:
+```text
+rtsp://<home-assistant-server-ip>:8554/x5
+```
+
+Service checks:
 
 ```sh
 systemctl status x5-rtsp-publish x5-mediamtx home-assistant@homeassistant
@@ -162,32 +168,32 @@ ffprobe -rtsp_transport tcp rtsp://127.0.0.1:8554/x5
 
 ## 6. Home Assistant
 
-W Home Assistant używana jest jedna encja Generic Camera ze źródłem:
+Home Assistant uses one Generic Camera entity with this source:
 
 ```text
 rtsp://127.0.0.1:8554/x5
 ```
 
-Dla kamery z UID `276642521291` encja ma nazwę:
+For camera UID `276642521291`, the entity is:
 
 ```text
 camera.wificam_x5_276642521291
 ```
 
-Przy kolejnej kamerze należy utworzyć osobny publisher/config z innym UID,
-adresem IP i portem UDP. UID jest używany także w encjach MQTT, więc urządzenia
-nie kolidują w jednym HA.
+For another camera, create a separate publisher/configuration with a different
+UID, IP address and UDP port. The UID is also used in MQTT entities, so several
+cameras can coexist in one Home Assistant instance without collisions.
 
-### MQTT LED/IR
+### MQTT LED/IR controls
 
-Publisher publikuje MQTT Discovery dla:
+The publisher advertises these MQTT Discovery entities:
 
 ```text
 switch.wificam_x5_276642521291_led
 switch.wificam_x5_276642521291_ir
 ```
 
-Topics są UID-scoped:
+Topics are scoped by UID:
 
 ```text
 wificam/x5/276642521291/led/set
@@ -197,29 +203,30 @@ wificam/x5/276642521291/ir/state
 wificam/x5/276642521291/availability
 ```
 
-Stan jest ostatnim skutecznie żądanym stanem. Firmware nie udostępnia
-wiarygodnego odczytu fizycznego stanu LED/IR, dlatego po ręcznej zmianie w
-aplikacji HA może mieć nieaktualny stan. Brak brokera MQTT nie zatrzymuje RTSP.
+The state is the last successfully requested state. The firmware does not
+provide a reliable physical LED/IR state readback, so Home Assistant may be
+wrong after a manual change in the vendor app. An unavailable MQTT broker does
+not stop RTSP.
 
-MQTT służy tylko do sterowania i Discovery. Nie używamy MQTT Camera do obrazu,
-bo ta integracja przesyła pojedyncze JPEG-i, a nie niskolatencyjny stream.
+MQTT is used only for controls and Discovery. MQTT Camera is not used for
+video because it sends individual JPEG images rather than a low-latency stream.
 
-### Opóźnienie i HLS
+### Latency and HLS
 
-Na testowanej instalacji HA 2023.10.3 używany jest stabilny HLS:
+The tested Home Assistant 2023.10.3 installation uses stable HLS:
 
 ```yaml
 stream:
   ll_hls: false
 ```
 
-Daje to zwykle kilka sekund opóźnienia. LL-HLS na tej konkretnej wersji HA i
-przeglądarce potrafił odtworzyć początkową playlistę, a następnie zatrzymać
-żądanie kolejnych fragmentów, dlatego pozostaje wyłączony.
+This normally adds a few seconds of latency. On this particular HA/browser
+combination, LL-HLS could play the initial playlist and then stop requesting
+subsequent fragments, so it remains disabled.
 
-Napis „Brak aktywności” w karcie kamery jest stanem encji `generic camera`;
-ta integracja nie raportuje `streaming/recording`, nawet gdy RTSP płynie. W
-karcie można ukryć go tak:
+The “No activity” overlay in the camera card is the state of the Generic Camera
+entity. This integration does not report `streaming`/`recording` even while RTSP
+is flowing. Hide it in the card with:
 
 ```yaml
 type: picture-entity
@@ -228,85 +235,99 @@ camera_view: live
 show_state: false
 ```
 
-## 7. Co jest lokalne, a co nadal zależy od chmury
+## 7. What is local and what still uses the cloud
 
-Projekt nie zastępuje całkowicie vendorowej chmury. Przy starcie publisher używa
-vendorowego HTTP API i tokenu do rejestracji endpointu UDP serwera Home
-Assistant, żądania live event, odświeżania sesji oraz wysyłania komend LED/IR.
+The project does not completely replace the vendor cloud. At startup the
+publisher uses the vendor HTTP API and token to register the Home Assistant
+server's UDP endpoint, request a live event, refresh the session and send LED/IR
+commands.
 
-Po zestawieniu sesji właściwy obraz i audio płyną bezpośrednio z kamery do
-serwera Home Assistant po UDP. Chmura nie przekazuje obrazu. To lokalny proxy
-mediów z cloud-assisted setup, a nie rozwiązanie całkowicie cloud-free.
+After the session is established, actual video and audio travel directly from
+the camera to the Home Assistant server over UDP. The cloud does not relay the
+media. This is a local media proxy with cloud-assisted setup, not a completely
+cloud-free implementation.
 
-Capture pokazał, że firmware otwiera również TCP do vendorowego serwera na
-porcie `8882`. Nie ustaliliśmy, czy hostname jest zaszyty w firmware, czy
-pobierany z innej konfiguracji/DNS.
+The capture also showed the firmware opening TCP to a vendor server on port
+`8882`. We have not established whether that hostname is compiled into the
+firmware or obtained through another configuration/DNS mechanism.
 
-## 8. Stabilność i zachowanie offline
+## 8. Stability and offline behavior
 
-Publisher ponawia negocjację, gdy kamera znika z LAN, nie restartuje HA z
-powodu braku kamery, powtarza ostatnią kompletną klatkę do 30 sekund podczas
-krótkiej przerwy oraz odświeża zdrową sesję live co 20 sekund bez zmiany portu
-UDP. Kolejki FFmpeg mają jeden pakiet, żeby nie odtwarzać starego obrazu przez
-dziesiątki sekund lub minuty.
+The publisher retries negotiation when the camera disappears from the LAN,
+does not restart Home Assistant because the camera is absent, repeats the last
+complete frame for up to 30 seconds during a short pause, and refreshes a
+healthy live session every 20 seconds without replacing the UDP port. FFmpeg
+queues are limited to one packet so stale video is not replayed for tens of
+seconds or minutes.
 
-Jeżeli kamera jest wyłączona, publisher może działać bez klatek, a HA nadal
-powinien się uruchomić. Po pojawieniu się kamery proces sam próbuje wznowić
-sesję.
+If the camera is powered off, the publisher can remain running without frames
+and Home Assistant should still start. When the camera returns, the process
+tries to resume the session automatically.
 
-## 9. Diagnostyka
+## 9. Troubleshooting
 
-Sprawdzaj warstwy w tej kolejności:
+Check the layers in this order:
 
-1. `systemctl is-active x5-rtsp-publish x5-mediamtx home-assistant@homeassistant`
-2. `journalctl -u x5-rtsp-publish.service -f`
-3. `ffprobe -v error -rtsp_transport tcp rtsp://127.0.0.1:8554/x5`
-4. `ss -lunp | grep 50001` oraz `ping <camera-ip>`
+1. ```sh
+   systemctl is-active x5-rtsp-publish x5-mediamtx home-assistant@homeassistant
+   ```
+2. ```sh
+   journalctl -u x5-rtsp-publish.service -f
+   ```
+   `negotiation succeeded` does not guarantee frames; look for
+   `first video frame assembled`.
+3. ```sh
+   ffprobe -v error -rtsp_transport tcp rtsp://127.0.0.1:8554/x5
+   ```
+4. ```sh
+   ss -lunp | grep 50001
+   ping <camera-ip>
+   ```
 
-`negotiation succeeded` nie gwarantuje jeszcze klatek; szukaj
-`first video frame assembled`. Brak ścieżki `x5` oznacza zwykle brak pierwszej
-klatki w FFmpeg, a nie problem z autoryzacją HA. UDP `50001` powinien należeć
-do dokładnie jednego odbiornika. Jeżeli `ffprobe` działa, a HA jest puste,
-sprawdzaj Generic Camera, HLS i kartę dashboardu.
+No `x5` path usually means FFmpeg has not received the first frame, not that
+Home Assistant authentication failed. UDP `50001` must belong to exactly one
+receiver. If `ffprobe` works but HA is blank, check Generic Camera, HLS and the
+dashboard card.
 
-## 10. Specyfika tej instalacji Home Assistant
+## 10. Specific to this Home Assistant installation
 
-To obejście dotyczy wyłącznie naszego serwera HA 2023.10.3 na Pythonie 3.11,
-ARMv7 i GCC 7.5 — nie jest ogólnym wymaganiem HA ani ARMv7. Ten serwer próbuje
-instalować `numpy==1.26.0`, nie ma odpowiedniego wheel i nie może zbudować go
-lokalnym GCC. Jest na nim NumPy 1.23.2, a unit HA używa
-`--skip-pip-packages numpy`, żeby boot nie trwał wiele minut.
+This workaround applies only to our HA 2023.10.3 server on Python 3.11,
+ARMv7 and GCC 7.5; it is not a general HA or ARMv7 requirement. This server
+tries to install `numpy==1.26.0`, has no matching wheel and cannot build it with
+the local compiler. NumPy 1.23.2 is already installed, and the HA unit uses
+`--skip-pip-packages numpy` so boot does not take many minutes.
 
-## 11. Pliki i development
+## 11. Files and development
 
-| Plik/usługa | Rola |
+| File/service | Purpose |
 | --- | --- |
-| `x5_viewer.py` | wspólna negocjacja, odbiór UDP i opcjonalny viewer HTTP |
-| `x5_rtsp_publish.py` | publisher RTSP, FFmpeg i lokalny control HTTP |
-| `x5_mqtt.py` | MQTT Discovery, LED/IR i availability |
-| `rtp_jpeg.py` | składanie fragmentów JPEG |
-| `protocol.md` | opis zreverse-engineerowanego protokołu |
-| `/etc/x5-viewer.env` | prywatny UID, IP, token i ustawienia |
-| `x5-rtsp-publish.service` | stały odbiornik i publisher |
-| `x5-mediamtx.service` | lokalny serwer RTSP |
+| `x5_viewer.py` | shared negotiation, UDP receiver and optional HTTP viewer |
+| `x5_rtsp_publish.py` | RTSP publisher, FFmpeg and local control HTTP |
+| `x5_mqtt.py` | MQTT Discovery, LED/IR and availability |
+| `rtp_jpeg.py` | JPEG fragment reassembly |
+| `protocol.md` | reverse-engineered protocol description |
+| `/etc/x5-viewer.env` | private UID, IP, token and settings |
+| `x5-rtsp-publish.service` | always-on receiver and publisher |
+| `x5-mediamtx.service` | local RTSP server |
 
 ```sh
 ./test.sh
 python3 rtp_jpeg.py private-capture.pcap --out /tmp/x5-jpegs
 ```
 
-`.gitignore` wyklucza capture, surowe media, logi, sekrety i cache Pythona.
+`.gitignore` excludes captures, raw media, logs, secrets and Python cache
+files.
 
-## 12. Bezpieczeństwo
+## 12. Security
 
-- Zaobserwowany endpoint API używa HTTP; traktuj token jak hasło.
-- Nie publikuj `pcap`, `config.env`, `/etc/x5-viewer.env` ani historii shella.
-- Viewer MJPEG nie ma uwierzytelniania; trzymaj go na zaufanym LAN.
-- Obróć/revokuj token, jeśli capture lub konfiguracja opuści zaufane hosty.
+- The observed API endpoint uses HTTP; treat the token as a password.
+- Do not publish `pcap`, `config.env`, `/etc/x5-viewer.env` or shell history.
+- The MJPEG viewer has no authentication; keep it on a trusted LAN.
+- Rotate/revoke the token if a capture or configuration leaves trusted hosts.
 
-## 13. Źródła
+## 13. Sources
 
-- [Z-IOT CAM w Google Play](https://play.google.com/store/apps/details?id=com.flu.flutter_wifi_camera) — aplikacja do początkowej konfiguracji;
+- [Z-IOT CAM on Google Play](https://play.google.com/store/apps/details?id=com.flu.flutter_wifi_camera) — app used for initial setup;
 - [DavidVentura/cam-reverse](https://github.com/DavidVentura/cam-reverse);
 - [Elektroda, topic 4150688](https://www.elektroda.pl/rtvforum/topic4150688.html);
 - [Elektroda, topic 4033757](https://www.elektroda.com/rtvforum/topic4033757.html);
@@ -319,5 +340,5 @@ python3 rtp_jpeg.py private-capture.pcap --out /tmp/x5-jpegs
 - [MediaMTX releases](https://github.com/bluenviron/mediamtx/releases);
 - [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/).
 
-Prywatne capture są podstawowym dowodem dla tego konkretnego modelu i nie są
-częścią publicznego repozytorium.
+Private captures are the primary evidence for this particular camera and are
+not part of the public repository.
