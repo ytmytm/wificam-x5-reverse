@@ -16,7 +16,7 @@ not require Docker, Node.js, npm, or Python packages.
 - local web preview at `/stream.mjpg`;
 - browser audio at `/audio.pcm` (signed little-endian PCM16, 8 kHz mono);
 - runtime camera selection in the web UI by UID and LAN IP;
-- browser control page at `/` with LED, IR, flip, and quality controls;
+- browser control page at `/` with LED, IR, and experimental quality controls;
 - JSON health endpoint at `/status`;
 - cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
 - automatic retry when the camera or cloud API is unavailable;
@@ -46,7 +46,7 @@ The UID is the numeric device identifier used by the cloud API; it is not the
 camera's LAN IP address and not its Wi-Fi MAC address. The easiest method is
 to capture one live-preview session from the phone and search the decoded
 HTTP/API traffic for `uid=` or a JSON field named `uid`. The same value also
-appears in the cloud command body sent when changing LED/IR/flip settings.
+appears in the cloud command body sent when changing LED/IR settings.
 
 For a private capture, use the token-extraction workflow below and then search
 locally without uploading the file:
@@ -102,18 +102,17 @@ video and audio are currently separate browser tracks, so a small amount of
 drift can occur over a long session. The raw internal tracks are deliberately
 kept separate to make a future FFmpeg/RTSP adapter straightforward.
 
-The implemented command
-mapping is LED (`3`), IR (`7`), vertical flip (`8`), horizontal flip (`9`),
-and image profile (`22`, values `0`/`1`/`2`). The capture confirms that these
-three profile values are sent, but all captured video headers remained
+The implemented command mapping is LED (`3`), IR (`7`), and image profile
+(`22`, values `0`/`1`/`2`). The capture confirms that these three profile
+values are sent, but all captured video headers remained
 `640×480`, so their exact SD/HD/FHD meaning is intentionally not claimed yet.
 
 The app capture did include two audio toggles. No camera command or separate
 audio-control request appeared; 268-byte audio datagrams continued throughout
-the session. The camera nevertheless sends a separate RTP audio track: the
-payload is G.711 μ-law at 8 kHz, mono. The viewer decodes it to signed
-little-endian PCM16 for the browser; this is local playback control, not a
-camera mute command.
+the session. The camera nevertheless sends a separate RTP audio track. The
+viewer decodes the audio payload (G.711 μ-law at 8 kHz, mono) to signed
+little-endian PCM16 for the browser. Audio playback mute/unmute belongs to the
+mobile app, not to the camera-control API.
 
 The viewer remains running when the camera is absent. It reports `offline` or
 `negotiated` in `/status` and retries automatically.

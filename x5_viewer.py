@@ -32,8 +32,6 @@ TOKEN = os.getenv("X5_API_TOKEN", "")
 COMMANDS = {
     "led": 3,
     "ir": 7,
-    "flip_v": 8,
-    "flip_h": 9,
     "quality": 22,
 }
 
@@ -62,7 +60,6 @@ button:hover{border-color:var(--accent);background:#30445d}button:disabled{curso
 <div class="group"><h2>Stan</h2><span id="status" class="pill">sprawdzam…</span><div id="result" class="result"></div></div>
 <div class="group"><h2>Dioda</h2><div class="buttons"><button onclick="cmd('led',1)">Włącz</button><button onclick="cmd('led',0)">Wyłącz</button></div></div>
 <div class="group"><h2>IR</h2><div class="buttons"><button onclick="cmd('ir',1)">Włącz</button><button onclick="cmd('ir',0)">Wyłącz</button></div></div>
-<div class="group"><h2>Odbicie</h2><div class="buttons"><button onclick="cmd('flip_h',1)">Poziomo</button><button onclick="cmd('flip_h',0)">Bez H</button><button onclick="cmd('flip_v',1)">Pionowo</button><button onclick="cmd('flip_v',0)">Bez V</button></div></div>
 <div class="group"><h2>Profil obrazu</h2><div class="buttons"><button onclick="cmd('quality',0)">Profil 0</button><button onclick="cmd('quality',1)">Profil 1</button><button onclick="cmd('quality',2)">Profil 2</button></div><div class="hint">Mapowanie SD / HD / FHD nie jest jeszcze potwierdzone.</div></div>
 <div class="group"><h2>Dźwięk</h2><button id="audioButton" onclick="toggleAudio()">Włącz dźwięk</button><div id="audioState" class="hint">Dźwięk jest osobnym strumieniem G.711 μ-law 8 kHz. Przeglądarka wymaga kliknięcia.</div></div>
 </aside></div>
