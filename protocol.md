@@ -5,6 +5,11 @@ capture to the local RTSP stream. The implementation is not a complete
 replacement for the vendor cloud: the cloud API is still needed to request a
 live session and to send camera controls.
 
+The vendor mobile app, currently **Z-IOT CAM**, is required for the initial
+camera provisioning: connecting the camera to the home WiFi, confirming its
+LAN address and starting the first live session used to obtain the UID and API
+token. It is not required for the always-on local receiver after that setup.
+
 ## End-to-end session
 
 The deployed receiver uses this sequence:
@@ -15,7 +20,9 @@ UID + bearer token
   -> vendor HTTP API: notify-live-event
   -> vendor HTTP API: stun-addr/<UID> returns camera UDP port
   -> local UDP: camera sends JPEG fragments and G.711 audio
-  -> local RTSP: FFmpeg publishes H.264/G.711 to MediaMTX
+  -> FFmpeg: H.264 hardware encoding + G.711 μ-law
+  -> local RTSP: MediaMTX publishes the stream to Home Assistant
+  -> MQTT: Home Assistant Discovery and LED/IR controls
 ```
 
 The camera's media packets travel directly over the LAN after negotiation. The
@@ -44,6 +51,11 @@ the active session was:
 camera 192.168.2.158:50361
 server 47.97.71.82:8882
 ```
+
+The current receiver does not depend on that camera TCP control connection for
+media. It uses the vendor HTTP API to request the live event, then receives
+media on the negotiated UDP port. The vendor cloud is therefore still part of
+session setup and command delivery, while the media path is local.
 
 ## Frame shape
 
@@ -160,17 +172,50 @@ tables into a regular JPEG interchange stream.
 The camera's measured video rate is about 8 FPS and the captured dimensions
 were `640x480` for all tested image profiles. The RTSP publisher explicitly
 uses 8 FPS so FFmpeg does not assume 25 FPS and create accelerating buffered
-playback.
+playback. Its MJPEG and PCM pipe input queues are limited to one packet; this
+prevents a short camera pause from becoming a long replay of stale data.
 
 Audio is RTP payload type `128`. After the 12-byte RTP header, packets contain
 252 bytes of G.711 μ-law samples at 8 kHz, mono. The receiver converts this to
 signed little-endian PCM16 before passing it to FFmpeg, which publishes G.711
 μ-law in the RTSP track.
 
-The browser viewer exposes video and audio as separate tracks. Home Assistant
-reads the RTSP output through its `stream` integration, normally producing HLS
-for the browser. HLS buffering is downstream of the camera protocol and cannot
-repair a missing UDP media session.
+The browser viewer exposes video and audio as separate tracks. The standalone
+RTSP publisher sends the two tracks to FFmpeg, which encodes the video as H.264
+using `h264_v4l2m2m` when available and carries audio as G.711 μ-law at 8 kHz.
+MediaMTX serves the resulting RTSP path `rtsp://127.0.0.1:8554/x5` to Home
+Assistant. HA's `stream` integration normally produces HLS for the browser;
+HLS buffering is downstream of the camera protocol and cannot repair a missing
+UDP media session.
+
+The publisher repeats the last complete JPEG at 8 FPS for up to 30 seconds
+during a short video pause. After the configured stale-video timeout it retries
+session negotiation. FFmpeg output uses `-flush_packets 1`; the publisher and
+MediaMTX are separate systemd services so HA can start even when the camera is
+offline.
+
+### MQTT control integration
+
+The RTSP publisher also runs an optional MQTT bridge. It connects to the broker
+configured by `X5_MQTT_BROKER` (default `iotlocal.lan:1883`) and publishes
+retained Home Assistant MQTT Discovery definitions for LED and IR switches.
+The camera UID is included in the MQTT client ID, device identifier, entity
+`unique_id` and all command/state topics, so multiple cameras can share one HA:
+
+```text
+homeassistant/switch/wificam_x5_<UID>_led/config
+homeassistant/switch/wificam_x5_<UID>_ir/config
+wificam/x5/<UID>/led/set
+wificam/x5/<UID>/ir/set
+wificam/x5/<UID>/led/state
+wificam/x5/<UID>/ir/state
+wificam/x5/<UID>/availability
+```
+
+MQTT is used for control and Discovery, not for video. MQTT Camera would carry
+individual JPEG messages rather than the low-latency RTSP stream. If the MQTT
+broker or Python MQTT package is unavailable, camera negotiation and RTSP
+continue normally.
 
 ## Quality and audio caveat
 
@@ -188,12 +233,14 @@ which one means SD, HD, or FHD.
 Audio was toggled twice during the same capture. No cloud command or separate
 audio-control HTTP request was observed; audio-sized UDP packets continued
 throughout. The current evidence points to a local mute/unmute operation in
-the mobile app rather than a camera setting.
+the mobile app rather than a camera setting. The current RTSP publisher does
+nevertheless mux the continuously received audio into the RTSP track.
 
 The audio packets use RTP payload type `128`. After the 12-byte RTP header,
 the stream has the same four-byte SSRC (`42 52 12 91`) seen in the video
 packets, followed by 252 bytes of G.711 μ-law samples. Packet timing is about
 31 packets per second, consistent with 8 kHz mono audio. `x5_viewer.py`
 decodes those samples to signed little-endian PCM16 and publishes them at
-`/audio.pcm` for the browser. Video and audio are kept as separate internal
-tracks so a future RTSP output can mux them without changing camera capture.
+`/audio.pcm` for the browser. Video and audio remain separate internal tracks
+until the publisher feeds them to FFmpeg, which muxes them into the RTSP output
+without changing the camera capture path.
