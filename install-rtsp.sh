@@ -26,7 +26,10 @@ else
 fi
 chmod 0755 /usr/local/bin/mediamtx
 install -o root -g root -m 0644 "$ROOT/mediamtx.yml" /etc/x5-mediamtx.yml
-install -o root -g root -m 0755 "$ROOT/x5-rtsp-publish.sh" "$PREFIX/x5-rtsp-publish.sh"
+install -d -o pi -g pi "$PREFIX"
+install -o pi -g pi -m 0755 "$ROOT/rtp_jpeg.py" "$PREFIX/rtp_jpeg.py"
+install -o pi -g pi -m 0755 "$ROOT/x5_viewer.py" "$PREFIX/x5_viewer.py"
+install -o root -g root -m 0755 "$ROOT/x5_rtsp_publish.py" "$PREFIX/x5_rtsp_publish.py"
 install -o root -g root -m 0644 "$ROOT/x5-mediamtx.service" /etc/systemd/system/x5-mediamtx.service
 install -o root -g root -m 0644 "$ROOT/x5-rtsp-publish.service" /etc/systemd/system/x5-rtsp-publish.service
 install -d -o root -g root /etc/systemd/system/home-assistant@homeassistant.service.d
@@ -64,7 +67,8 @@ else
 fi
 
 systemctl daemon-reload
-systemctl enable --now x5-viewer.service x5-mediamtx.service x5-rtsp-publish.service
-systemctl restart x5-viewer.service x5-mediamtx.service x5-rtsp-publish.service
+systemctl disable --now x5-viewer.service 2>/dev/null || true
+systemctl enable --now x5-mediamtx.service x5-rtsp-publish.service
+systemctl restart x5-mediamtx.service x5-rtsp-publish.service
 systemctl --no-pager --full status x5-mediamtx.service x5-rtsp-publish.service || true
 echo "RTSP URL: rtsp://<odroid-ip>:8554/x5"

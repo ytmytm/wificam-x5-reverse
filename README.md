@@ -21,7 +21,8 @@ not require Docker, Node.js, npm, or Python packages.
 - cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
 - automatic retry when the camera or cloud API is unavailable;
 - systemd autostart and graceful offline behavior;
-- optional local RTSP output at `rtsp://<odroid-ip>:8554/x5`;
+- optional local RTSP output at `rtsp://<odroid-ip>:8554/x5`; the publisher
+  owns the UDP camera session and does not require the web demo;
 - optional Home Assistant Generic Camera autoconfiguration with RTSP/HLS;
 - Python 3.6-compatible runtime code for older ARM systems.
 
@@ -162,13 +163,12 @@ The RTSP output normalizes the camera's JPEG frames to hardware-encoded H.264
 green/corrupted frames that can occur when the camera-specific JPEG stream is
 copied directly into RTSP.
 
-The publisher consumes the viewer's local MJPEG and PCM endpoints, so the
-camera negotiation remains in `x5-viewer.service` and the RTSP layer retries
-gracefully when the camera is offline. On this older Home Assistant/ARMv7
-installation, the autoconfig uses Generic Camera with both the local
-single-frame `/snapshot.jpg` endpoint and `rtsp://127.0.0.1:8554/x5` as its
-stream source. The RTSP stream is handled by HA's `stream` integration; the
-snapshot remains a fallback when no camera frame is currently available.
+The RTSP publisher owns the UDP receiver and cloud-assisted camera
+negotiation. It passes the reassembled JPEG and G.711 audio directly to
+FFmpeg through local pipes; the web demo is not required. On this older
+Home Assistant/ARMv7 installation, Generic Camera uses
+`rtsp://127.0.0.1:8554/x5` as its stream source. The RTSP stream is handled by
+HA's `stream` integration.
 
 The installer configures stable non-LL HLS. HA 2023.10's LL-HLS mode can
 repeatedly rebuffer in older browsers, even when the RTSP input is healthy;
@@ -194,12 +194,12 @@ Home Assistant or its stream integration.
 
 ### Boot order and camera offline behavior
 
-The systemd units for the viewer, MediaMTX, and the RTSP publisher are enabled
+The systemd units for MediaMTX and the self-contained RTSP publisher are enabled
 before Home Assistant. Home Assistant has a `Wants`/`After` drop-in for this
 stack, but those are ordering and soft dependencies: Home Assistant still
-starts if the camera is powered off or absent from the LAN. The viewer keeps
-its HTTP endpoints available and reports no frame until the camera returns;
-the publisher retries without restarting Home Assistant.
+starts if the camera is powered off or absent from the LAN. The publisher
+retries without restarting Home Assistant. The web viewer service is disabled
+by `install-rtsp.sh` and remains an optional diagnostic tool.
 after making a timestamped backup. The installer attempts to validate the
 configuration before restarting Home Assistant; if the old HA environment
 cannot finish its dependency check, it leaves HA running and reports that
