@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
 from x5_viewer import Cloud, COMMANDS, state, udp_worker
+from x5_mqtt import MqttBridge
 
 
 FFMPEG = os.getenv("X5_FFMPEG", "/usr/local/bin/ffmpeg")
@@ -62,6 +63,11 @@ class ControlHandler(BaseHTTPRequestHandler):
 def start_control_server() -> None:
     server = ControlServer((CONTROL_HOST, CONTROL_PORT), ControlHandler)
     threading.Thread(target=server.serve_forever, name="x5-control", daemon=True).start()
+
+
+def send_camera_command(name: str, value: int) -> bool:
+    Cloud().send_command(COMMANDS[name], value)
+    return True
 
 
 def write_all(fd: int, data: bytes) -> None:
@@ -151,6 +157,8 @@ def publish_once() -> int:
 
 def main() -> None:
     start_control_server()
+    threading.Thread(target=MqttBridge(send_camera_command).run,
+                     name="x5-mqtt", daemon=True).start()
     threading.Thread(target=udp_worker, name="x5-udp", daemon=True).start()
     while True:
         publish_once()

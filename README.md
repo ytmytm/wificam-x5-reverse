@@ -291,6 +291,16 @@ The switches show the last requested state only. This camera protocol exposes
 no reliable state-read operation, so HA cannot verify the physical LED/IR
 state after a restart or a manual change in the vendor app.
 
+MQTT is the preferred HA control path in the deployed setup. The publisher
+uses `iotlocal.lan:1883` by default and publishes retained MQTT Discovery
+definitions for `switch.wificam_x5_led` and `switch.wificam_x5_ir`. Commands
+are sent on `wificam/x5/led/set` and `wificam/x5/ir/set`; state is published on
+the matching `/state` topics and availability on `wificam/x5/availability`.
+The MQTT bridge is optional: if the broker or the Python MQTT package is
+unavailable, RTSP and camera negotiation continue normally. MQTT is used for
+control and discovery, not for video; MQTT Camera would send individual JPEG
+messages rather than a low-latency stream.
+
 The installer configures stable non-LL HLS (`ll_hls: false`). On the tested
 older HA/browser combination, LL-HLS could play the initial playlist and then
 stop requesting usable subsequent fragments. Non-LL HLS adds several seconds

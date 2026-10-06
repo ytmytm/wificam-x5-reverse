@@ -15,6 +15,10 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 command -v curl >/dev/null 2>&1 || { echo "curl is required" >&2; exit 1; }
 command -v ffmpeg >/dev/null 2>&1 || { echo "ffmpeg is required" >&2; exit 1; }
+if ! python3 -c 'import paho.mqtt.client' >/dev/null 2>&1; then
+    echo "Installing the optional MQTT control dependency..."
+    apt-get install -y python3-paho-mqtt
+fi
 
 if [ -x /usr/local/bin/mediamtx ] && [ "${MEDIAMTX_FORCE_DOWNLOAD:-0}" != 1 ]; then
     echo "Using existing /usr/local/bin/mediamtx"
@@ -29,6 +33,7 @@ install -o root -g root -m 0644 "$ROOT/mediamtx.yml" /etc/x5-mediamtx.yml
 install -d -o pi -g pi "$PREFIX"
 install -o pi -g pi -m 0755 "$ROOT/rtp_jpeg.py" "$PREFIX/rtp_jpeg.py"
 install -o pi -g pi -m 0755 "$ROOT/x5_viewer.py" "$PREFIX/x5_viewer.py"
+install -o pi -g pi -m 0755 "$ROOT/x5_mqtt.py" "$PREFIX/x5_mqtt.py"
 install -o root -g root -m 0755 "$ROOT/x5_rtsp_publish.py" "$PREFIX/x5_rtsp_publish.py"
 install -o root -g root -m 0644 "$ROOT/x5-mediamtx.service" /etc/systemd/system/x5-mediamtx.service
 install -o root -g root -m 0644 "$ROOT/x5-rtsp-publish.service" /etc/systemd/system/x5-rtsp-publish.service
