@@ -165,10 +165,10 @@ copied directly into RTSP.
 The publisher consumes the viewer's local MJPEG and PCM endpoints, so the
 camera negotiation remains in `x5-viewer.service` and the RTSP layer retries
 gracefully when the camera is offline. On this older Home Assistant/ARMv7
-installation, the autoconfig uses Generic Camera with the local single-frame
-`/snapshot.jpg` endpoint. This avoids the optional `stream` integration and
-its NumPy dependency, which is not buildable in the current old HA environment.
-The RTSP endpoint remains available for clients that support it.
+installation, the autoconfig uses Generic Camera with both the local
+single-frame `/snapshot.jpg` endpoint and `rtsp://127.0.0.1:8554/x5` as its
+stream source. The RTSP stream is handled by HA's `stream` integration; the
+snapshot remains a fallback when no camera frame is currently available.
 
 The Odroid's HA service also starts with `--skip-pip-packages numpy`. HA
 2023.10 requests exactly `numpy==1.26.0`, but ARMv7/Python 3.11 has no matching

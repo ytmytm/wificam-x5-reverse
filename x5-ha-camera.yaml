@@ -1,3 +1,5 @@
 - platform: generic
   name: WiFiCam X5
   still_image_url: http://127.0.0.1:5080/snapshot.jpg
+  stream_source: rtsp://127.0.0.1:8554/x5
+  rtsp_transport: tcp
