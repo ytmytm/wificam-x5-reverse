@@ -16,6 +16,9 @@ from x5_viewer import state, udp_worker
 FFMPEG = os.getenv("X5_FFMPEG", "/usr/local/bin/ffmpeg")
 RTSP_URL = os.getenv("X5_RTSP_URL", "rtsp://127.0.0.1:8554/x5")
 VIDEO_GRACE_SECONDS = float(os.getenv("X5_VIDEO_GRACE_SECONDS", "30"))
+# This is intentionally small.  A large FFmpeg input queue turns a temporary
+# camera pause into a long replay of old MJPEG/PCM data.
+INPUT_QUEUE_SIZE = int(os.getenv("X5_FFMPEG_INPUT_QUEUE", "1"))
 
 
 def write_all(fd: int, data: bytes) -> None:
@@ -75,14 +78,15 @@ def publish_once() -> int:
     command = [
         FFMPEG, "-hide_banner", "-loglevel", "warning",
         "-fflags", "nobuffer", "-flags", "low_delay",
-        "-thread_queue_size", "256", "-framerate", "8", "-f", "mjpeg",
+        "-thread_queue_size", str(INPUT_QUEUE_SIZE), "-framerate", "8", "-f", "mjpeg",
         "-i", f"pipe:{video_read}",
         "-fflags", "nobuffer", "-flags", "low_delay",
-        "-thread_queue_size", "256", "-f", "s16le", "-ar", "8000", "-ac", "1",
+        "-thread_queue_size", str(INPUT_QUEUE_SIZE), "-f", "s16le", "-ar", "8000", "-ac", "1",
         "-i", f"pipe:{audio_read}", "-map", "0:v:0", "-map", "1:a:0",
         "-pix_fmt", "nv21", "-c:v", "h264_v4l2m2m", "-b:v", "800k", "-g", "8", "-bf", "0",
         "-c:a", "pcm_mulaw", "-ar", "8000", "-ac", "1",
-        "-muxdelay", "0", "-muxpreload", "0", "-f", "rtsp", "-rtsp_transport", "tcp", RTSP_URL,
+        "-muxdelay", "0", "-muxpreload", "0", "-flush_packets", "1",
+        "-f", "rtsp", "-rtsp_transport", "tcp", RTSP_URL,
     ]
     process = subprocess.Popen(command, pass_fds=(video_read, audio_read))
     os.close(video_read)

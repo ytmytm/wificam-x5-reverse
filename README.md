@@ -251,6 +251,13 @@ Without `-framerate 8`, FFmpeg assumes 25 FPS for the multipart MJPEG input;
 the resulting timestamps make HA/HLS wait and then play buffered frames too
 quickly.
 
+The FFmpeg MJPEG and PCM pipe queues are deliberately limited to one packet.
+This is important for this camera: when its UDP feed pauses, a large FFmpeg
+queue can turn a short interruption into tens of seconds or minutes of stale
+playback. The receiver keeps only the newest complete JPEG; old input data is
+allowed to be discarded. `X5_FFMPEG_INPUT_QUEUE` can be increased for
+diagnostics, but should remain `1` for live viewing.
+
 ### Home Assistant configuration
 
 The recommended HA camera is one Generic Camera config entry with this stream
