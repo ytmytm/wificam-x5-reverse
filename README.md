@@ -117,6 +117,23 @@ mobile app, not to the camera-control API.
 The viewer remains running when the camera is absent. It reports `offline` or
 `negotiated` in `/status` and retries automatically.
 
+## What is local and what still uses the vendor cloud
+
+This server is not yet a complete replacement for the vendor's cloud service.
+After startup it uses the vendor HTTP API, authenticated with the captured
+bearer token, to register the Odroid's UDP endpoint and request a live session.
+It repeats that negotiation periodically so the stream can recover after a
+camera or network interruption. LED, IR, and image-profile commands also go
+through the vendor API.
+
+Once the session is negotiated, the actual video and audio packets travel
+directly between the camera and the Odroid over the LAN; they are not relayed
+through the vendor cloud. The current architecture is therefore a local media
+proxy with cloud-assisted session setup, not a fully cloud-free implementation.
+Removing the remaining cloud dependency would require reverse-engineering a
+direct local session/discovery handshake and a local replacement for the
+control API.
+
 ## Selecting a camera in the web UI
 
 The control page displays the known `X5_UID`; enter the camera's current LAN
