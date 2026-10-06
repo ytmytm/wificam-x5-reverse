@@ -39,6 +39,34 @@ be overridden through the environment file:
 The API currently uses an HTTP bearer token. The token is not included in this
 repository and must be supplied locally as `X5_API_TOKEN`.
 
+## Finding the camera UID
+
+The UID is the numeric device identifier used by the cloud API; it is not the
+camera's LAN IP address and not its Wi-Fi MAC address. The easiest method is
+to capture one live-preview session from the phone and search the decoded
+HTTP/API traffic for `uid=` or a JSON field named `uid`. The same value also
+appears in the cloud command body sent when changing LED/IR/flip settings.
+
+For a private capture, use the token-extraction workflow below and then search
+locally without uploading the file:
+
+```sh
+strings /path/to/x5-full.pcap | rg -o '[?&]uid=[0-9]+|"uid"[[:space:]]*:[[:space:]]*"?[0-9]+'
+```
+
+If the capture is opened in Wireshark, use **Find Packet → String** and search
+for `uid`. Verify the result against the camera selected in the mobile app;
+some accounts can contain more than one device. Put the result in the private
+environment file:
+
+```sh
+X5_UID=your-camera-uid
+```
+
+The default in the example configuration is the development camera's value;
+replace it when configuring another device. Do not commit the pcap, UID, or
+bearer token.
+
 ## Quick start
 
 Copy the repository to the target machine and run:
