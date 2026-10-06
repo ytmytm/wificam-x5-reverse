@@ -42,6 +42,16 @@ if id homeassistant >/dev/null 2>&1; then
     if ! grep -Eq '^[[:space:]]*camera:[[:space:]]*!include[[:space:]]+x5_camera.yaml' "$HA_CONFIG"; then
         printf 'camera: !include x5_camera.yaml\n' >> "$HA_CONFIG"
     fi
+    if ! grep -Eq '^[[:space:]]*stream:[[:space:]]*$' "$HA_CONFIG"; then
+        cat >> "$HA_CONFIG" <<'EOF'
+
+# Low-latency HLS for the X5 RTSP camera. HA's default is 6-second segments.
+stream:
+  ll_hls: true
+  segment_duration: 2
+  part_duration: 0.5
+EOF
+    fi
     chown homeassistant:homeassistant "$HA_CONFIG"
     if [ -x /home/homeassistant/homeassistant/bin/hass ]; then
         if timeout 90 sudo -u homeassistant /home/homeassistant/homeassistant/bin/hass \

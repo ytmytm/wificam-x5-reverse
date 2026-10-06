@@ -22,7 +22,7 @@ not require Docker, Node.js, npm, or Python packages.
 - automatic retry when the camera or cloud API is unavailable;
 - systemd autostart and graceful offline behavior;
 - optional local RTSP output at `rtsp://<odroid-ip>:8554/x5`;
-- optional Home Assistant MJPEG Camera autoconfiguration;
+- optional Home Assistant Generic Camera autoconfiguration with RTSP/HLS;
 - Python 3.6-compatible runtime code for older ARM systems.
 
 ## Current device assumptions
@@ -169,6 +169,11 @@ installation, the autoconfig uses Generic Camera with both the local
 single-frame `/snapshot.jpg` endpoint and `rtsp://127.0.0.1:8554/x5` as its
 stream source. The RTSP stream is handled by HA's `stream` integration; the
 snapshot remains a fallback when no camera frame is currently available.
+
+The installer configures low-latency HLS (`segment_duration: 2`,
+`part_duration: 0.5`). HA 2023.10 otherwise defaults to roughly six-second
+HLS segments, which causes a visible loading pause followed by accelerated
+playback in the browser.
 
 After Home Assistant imports the Generic Camera entry, remove the temporary
 `camera: !include x5_camera.yaml` line from `configuration.yaml`. The imported
@@ -328,8 +333,7 @@ materials:
 - [FFmpeg RTP/JPEG depacketizer](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/rtpdec_jpeg.c);
 - [ACTi Streaming SDK guide](https://fen.home.pl/pub/webFTP/sterowniki/Acti/SDK/ACTi_SDK-10000_C_SDK_Programming_Guide-v1.2.33.pdf) — useful documentation of the same RTP/JPEG header layout;
 - [MediaMTX releases](https://github.com/bluenviron/mediamtx/releases) — lightweight RTSP server used by the optional output layer;
-- [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — RTSP configuration reference;
-- [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — dashboard snapshot configuration used on the old HA host.
+- [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — RTSP and dashboard snapshot configuration;
 
 The private `.pcap` files in this working tree are the primary evidence for
 this particular camera and are intentionally excluded from Git.
