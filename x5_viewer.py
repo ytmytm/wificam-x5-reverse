@@ -2,6 +2,7 @@
 """Small, dependency-free web viewer for the TXW817/X5 camera."""
 
 import json
+import ipaddress
 import os
 import queue
 import socket
@@ -57,6 +58,7 @@ button:hover{border-color:var(--accent);background:#30445d}button:disabled{curso
 <h1>WiFiCam X5</h1><div class="sub">Lokalny podgląd i sterowanie kamerą TXW817</div>
 <div class="layout"><section class="card video"><img src="/stream.mjpg" alt="Podgląd kamery"></section>
 <aside class="card controls">
+<div class="group"><h2>Kamerka</h2><label>UID<br><input id="cameraUid" inputmode="numeric" style="width:100%;margin:4px 0 8px;padding:8px;background:#111923;color:#eef4fb;border:1px solid #4a5b70;border-radius:6px"></label><label>IP w LAN<br><input id="cameraIp" inputmode="decimal" style="width:100%;margin:4px 0 8px;padding:8px;background:#111923;color:#eef4fb;border:1px solid #4a5b70;border-radius:6px"></label><button onclick="selectCamera()">Wybierz kamerę</button><div class="hint">UID pochodzi z aplikacji/API; IP z DHCP/LAN.</div></div>
 <div class="group"><h2>Stan</h2><span id="status" class="pill">sprawdzam…</span><div id="result" class="result"></div></div>
 <div class="group"><h2>Dioda</h2><div class="buttons"><button onclick="cmd('led',1)">Włącz</button><button onclick="cmd('led',0)">Wyłącz</button></div></div>
 <div class="group"><h2>IR</h2><div class="buttons"><button onclick="cmd('ir',1)">Włącz</button><button onclick="cmd('ir',0)">Wyłącz</button></div></div>
@@ -65,8 +67,9 @@ button:hover{border-color:var(--accent);background:#30445d}button:disabled{curso
 <div class="group"><h2>Dźwięk</h2><button id="audioButton" onclick="toggleAudio()">Włącz dźwięk</button><div id="audioState" class="hint">Dźwięk jest osobnym strumieniem G.711 μ-law 8 kHz. Przeglądarka wymaga kliknięcia.</div></div>
 </aside></div>
 <script>
-async function refresh(){try{let r=await fetch('/status');let x=await r.json();let e=document.getElementById('status');e.textContent=x.status+' · klatki: '+x.frames;e.className='pill '+(x.status==='streaming'?'ok':'bad');}catch(e){}}
+async function refresh(){try{let r=await fetch('/status');let x=await r.json();let e=document.getElementById('status');e.textContent=x.status+' · klatki: '+x.frames;e.className='pill '+(x.status==='streaming'?'ok':'bad');document.getElementById('cameraUid').value=x.uid||'';document.getElementById('cameraIp').value=x.camera_ip||'';}catch(e){}}
 async function cmd(name,value){let out=document.getElementById('result');out.textContent='Wysyłanie…';try{let r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:name,value:value})});let x=await r.json();out.textContent=r.ok?'Wysłano: '+name+' = '+value:(x.error||'Błąd');}catch(e){out.textContent='Błąd połączenia';}}
+async function selectCamera(){let out=document.getElementById('result');out.textContent='Przełączanie…';try{let r=await fetch('/api/camera',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:document.getElementById('cameraUid').value,camera_ip:document.getElementById('cameraIp').value})});let x=await r.json();out.textContent=r.ok?'Wybrano '+x.uid+' / '+x.camera_ip:(x.error||'Błąd');}catch(e){out.textContent='Błąd połączenia';}}
 let audioRun=false,audioContext=null,audioReader=null,audioNext=0;
 function ulawByte(x){x=(~x)&255;let t=((x&15)<<3)+132;t<<=((x&112)>>4);return (x&128)?(132-t):(t-132);}
 async function toggleAudio(){let b=document.getElementById('audioButton'),s=document.getElementById('audioState');
@@ -77,6 +80,26 @@ async function toggleAudio(){let b=document.getElementById('audioButton'),s=docu
 }
 refresh();setInterval(refresh,3000);
 </script></main></body></html>"""
+
+
+class CameraConfig:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.uid = UID
+        self.camera_ip = CAMERA_IP
+        self.generation = 0
+
+    def get(self):
+        with self.lock:
+            return self.uid, self.camera_ip, self.generation
+
+    def set(self, uid: str, camera_ip: str) -> None:
+        with self.lock:
+            self.uid, self.camera_ip = uid, camera_ip
+            self.generation += 1
+
+
+camera_config = CameraConfig()
 
 
 class State:
@@ -138,14 +161,15 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 class Cloud:
-    def __init__(self) -> None:
+    def __init__(self, uid: Optional[str] = None, camera_ip: Optional[str] = None) -> None:
+        self.uid = uid or camera_config.get()[0]
+        self.camera_ip = camera_ip or camera_config.get()[1]
         self.private_ip = self._local_ip()
 
-    @staticmethod
-    def _local_ip() -> str:
+    def _local_ip(self) -> str:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            sock.connect((CAMERA_IP, 9))
+            sock.connect((self.camera_ip, 9))
             return sock.getsockname()[0]
         finally:
             sock.close()
@@ -162,7 +186,7 @@ class Cloud:
             raise RuntimeError("X5_API_TOKEN is not configured")
         query = urllib.parse.urlencode({"appId": APP_ID})
         url = API_BASE + "/api/v1/cmd/send-cmd?" + query
-        payload = json.dumps({"cmdType": str(command), "uid": UID,
+        payload = json.dumps({"cmdType": str(command), "uid": self.uid,
                               "content": str(value)}).encode("ascii")
         request = urllib.request.Request(
             url, data=payload,
@@ -177,9 +201,9 @@ class Cloud:
         # to notify the camera that a live event is wanted.
         self.get("/api/v1/ipc/send-stun-addr", publicIp=self.private_ip,
                  publicPort=str(LISTEN_PORT), privateIp=self.private_ip,
-                 privatePort=str(LISTEN_PORT), uid=UID)
-        self.get("/api/v1/ipc/notify-live-event", eventType="1", uid=UID)
-        response = self.get("/api/v1/ipc/stun-addr/" + UID)
+                 privatePort=str(LISTEN_PORT), uid=self.uid)
+        self.get("/api/v1/ipc/notify-live-event", eventType="1", uid=self.uid)
+        response = self.get("/api/v1/ipc/stun-addr/" + self.uid)
         data = response.get("data", response)
         port = int(data.get("IpcPublicPort") or data.get("IpcPrivatePort"))
         return port
@@ -203,17 +227,23 @@ def udp_worker() -> None:
     sock.bind((LISTEN_HOST, LISTEN_PORT))
     sock.settimeout(1.0)
     groups = {}  # type: Dict[bytes, Dict[int, bytes]]
-    cloud = Cloud()
     next_negotiation = 0.0
     next_heartbeat = 0.0
     camera_port = None
+    config_generation = -1
 
     while True:
         now = time.monotonic()
+        uid, camera_ip, generation = camera_config.get()
+        if generation != config_generation:
+            camera_port = None
+            groups.clear()
+            config_generation = generation
+            next_negotiation = 0.0
         if now >= next_negotiation:
             try:
                 if TOKEN:
-                    camera_port = cloud.negotiate()
+                    camera_port = Cloud(uid, camera_ip).negotiate()
                     state.set_status("negotiated")
                 else:
                     state.set_status("listening", "X5_API_TOKEN is not configured")
@@ -223,8 +253,8 @@ def udp_worker() -> None:
                 next_negotiation = now + 10
         if camera_port and now >= next_heartbeat:
             try:
-                sock.sendto(b"DrApp send hello", (CAMERA_IP, camera_port))
-                sock.sendto(b"App send heart for stun", (CAMERA_IP, camera_port))
+                sock.sendto(b"DrApp send hello", (camera_ip, camera_port))
+                sock.sendto(b"App send heart for stun", (camera_ip, camera_port))
             except OSError:
                 pass
             next_heartbeat = now + 4
@@ -272,8 +302,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/" or self.path == "/status":
             with state.lock:
+                uid, camera_ip, _ = camera_config.get()
                 payload = {"status": state.status, "frames": state.received,
-                           "last_frame": state.updated, "error": state.last_error}
+                           "last_frame": state.updated, "error": state.last_error,
+                           "uid": uid, "camera_ip": camera_ip}
             data = (json.dumps(payload) + "\n").encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -323,6 +355,28 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.05)
 
     def do_POST(self) -> None:
+        if self.path == "/api/camera":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                request = json.loads(self.rfile.read(length).decode("utf-8"))
+                uid = str(request["uid"]).strip()
+                camera_ip = str(request["camera_ip"]).strip()
+                if not uid.isdigit() or not 6 <= len(uid) <= 20:
+                    raise ValueError("UID must contain 6-20 digits")
+                camera_ip = str(ipaddress.ip_address(camera_ip))
+                camera_config.set(uid, camera_ip)
+                state.set_status("switching")
+                body = json.dumps({"ok": True, "uid": uid,
+                                   "camera_ip": camera_ip}).encode("utf-8")
+                self.send_response(200)
+            except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                body = json.dumps({"ok": False, "error": str(exc)[:200]}).encode("utf-8")
+                self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path != "/api/command":
             self.send_error(404)
             return
