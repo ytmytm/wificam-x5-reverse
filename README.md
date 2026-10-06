@@ -293,9 +293,12 @@ state after a restart or a manual change in the vendor app.
 
 MQTT is the preferred HA control path in the deployed setup. The publisher
 uses `iotlocal.lan:1883` by default and publishes retained MQTT Discovery
-definitions for `switch.wificam_x5_led` and `switch.wificam_x5_ir`. Commands
-are sent on `wificam/x5/led/set` and `wificam/x5/ir/set`; state is published on
-the matching `/state` topics and availability on `wificam/x5/availability`.
+definitions whose device identifier, entity `unique_id`, client ID and topics
+include the camera UID. For this camera, commands are sent on
+`wificam/x5/276642521291/led/set` and `wificam/x5/276642521291/ir/set`; state is
+published on the matching `/state` topics and availability on
+`wificam/x5/276642521291/availability`. This prevents collisions when several
+X5 cameras share one Home Assistant.
 The MQTT bridge is optional: if the broker or the Python MQTT package is
 unavailable, RTSP and camera negotiation continue normally. MQTT is used for
 control and discovery, not for video; MQTT Camera would send individual JPEG

@@ -3,8 +3,9 @@
 import json
 import logging
 import os
+import re
 import threading
-from typing import Callable, Optional
+from typing import Callable
 
 
 log = logging.getLogger("x5.mqtt")
@@ -13,9 +14,12 @@ BROKER = os.getenv("X5_MQTT_BROKER", "iotlocal.lan")
 PORT = int(os.getenv("X5_MQTT_PORT", "1883"))
 USERNAME = os.getenv("X5_MQTT_USERNAME", "")
 PASSWORD = os.getenv("X5_MQTT_PASSWORD", "")
-PREFIX = os.getenv("X5_MQTT_PREFIX", "wificam/x5")
+BASE_PREFIX = os.getenv("X5_MQTT_PREFIX", "wificam/x5").rstrip("/")
+CAMERA_UID = os.getenv("X5_UID", "276642521291")
+UID_KEY = re.sub(r"[^A-Za-z0-9_-]", "_", CAMERA_UID)
+PREFIX = BASE_PREFIX + "/" + UID_KEY
 DISCOVERY_PREFIX = os.getenv("X5_MQTT_DISCOVERY_PREFIX", "homeassistant")
-CLIENT_ID = os.getenv("X5_MQTT_CLIENT_ID", "wificam-x5-publisher")
+CLIENT_ID = os.getenv("X5_MQTT_CLIENT_ID", "wificam-x5-" + UID_KEY)
 
 
 class MqttBridge:
@@ -35,8 +39,8 @@ class MqttBridge:
 
     def _publish_discovery(self) -> None:
         device = {
-            "identifiers": ["wificam_x5"],
-            "name": "WiFiCam X5",
+            "identifiers": ["wificam_x5_" + UID_KEY],
+            "name": "WiFiCam X5 " + CAMERA_UID,
             "manufacturer": "TXW817/X5",
             "model": "TXW817",
         }
@@ -44,8 +48,8 @@ class MqttBridge:
             ("led", "LED", 3), ("ir", "IR", 7)
         ):
             config = {
-                "name": "WiFiCam X5 " + label,
-                "unique_id": "wificam_x5_" + name,
+                "name": "WiFiCam X5 " + CAMERA_UID + " " + label,
+                "unique_id": "wificam_x5_" + UID_KEY + "_" + name,
                 "command_topic": PREFIX + "/" + name + "/set",
                 "state_topic": PREFIX + "/" + name + "/state",
                 "availability_topic": self.availability_topic,
@@ -59,14 +63,17 @@ class MqttBridge:
                 # Keep the mapping visible in the retained discovery document.
                 "json_attributes_topic": PREFIX + "/attributes",
             }
-            topic = "%s/switch/wificam_x5_%s/config" % (DISCOVERY_PREFIX, name)
+            topic = "%s/switch/wificam_x5_%s_%s/config" % (DISCOVERY_PREFIX, UID_KEY, name)
             self._publish(topic, json.dumps(config, separators=(",", ":")))
             self.client.subscribe(config["command_topic"], qos=1)
             with self._lock:
                 state = self.states[name]
             if state is not None:
                 self._publish(PREFIX + "/" + name + "/state", state)
-        self._publish(PREFIX + "/attributes", json.dumps({"led_command": 3, "ir_command": 7}))
+        self._publish(PREFIX + "/attributes", json.dumps({"uid": CAMERA_UID, "led_command": 3, "ir_command": 7}))
+        # Remove discovery records created by versions before UID-scoped topics.
+        for name in ("led", "ir"):
+            self._publish(DISCOVERY_PREFIX + "/switch/wificam_x5_" + name + "/config", "")
 
     def _on_connect(self, client, _userdata, _flags, rc) -> None:
         if rc != 0:
@@ -116,4 +123,3 @@ class MqttBridge:
             self.client.loop_forever()
         except Exception:
             log.exception("MQTT bridge stopped; RTSP publisher continues")
-
