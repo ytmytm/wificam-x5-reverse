@@ -76,4 +76,4 @@ systemctl disable --now x5-viewer.service 2>/dev/null || true
 systemctl enable --now x5-mediamtx.service x5-rtsp-publish.service
 systemctl restart x5-mediamtx.service x5-rtsp-publish.service
 systemctl --no-pager --full status x5-mediamtx.service x5-rtsp-publish.service || true
-echo "RTSP URL: rtsp://<odroid-ip>:8554/x5"
+echo "RTSP URL: rtsp://<home-assistant-server-ip>:8554/x5"

@@ -2,7 +2,7 @@
 """Print TCP payloads from a pcap using tcpdump's hex output.
 
 This intentionally uses the system tcpdump instead of a third-party pcap
-library, so it also works on the old Odroid/router toolchain.
+library, so it also works on the old Home Assistant server/router toolchain.
 """
 
 from __future__ import annotations

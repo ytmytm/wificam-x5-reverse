@@ -6,7 +6,7 @@ uses the vendor HTTP API only to start a live session, receives the media over
 the LAN, and can expose it either as a diagnostic browser preview or as an
 RTSP stream for Home Assistant and other clients.
 
-The implementation was tested on an ARMv7 Odroid running Ubuntu 18.04. It does
+The implementation was tested on an ARMv7 Home Assistant server running Ubuntu 18.04. It does
 not require Docker, Node.js, npm, or Python packages.
 
 > This is an independent reverse-engineering project. Use it only with cameras
@@ -22,7 +22,7 @@ not require Docker, Node.js, npm, or Python packages.
 - cloud-assisted UDP endpoint negotiation, followed by local camera traffic;
 - automatic retry when the camera or cloud API is unavailable;
 - systemd autostart and graceful offline behavior;
-- standalone local RTSP output at `rtsp://<odroid-ip>:8554/x5`; the publisher
+- standalone local RTSP output at `rtsp://<home-assistant-server-ip>:8554/x5`; the publisher
   owns the UDP camera session and does not start the web demo;
 - Home Assistant Generic Camera support through RTSP/HLS;
 - Python 3.6-compatible runtime code for older ARM systems.
@@ -50,7 +50,7 @@ camera UDP -> JPEG fragments + G.711 audio -> Python reassembler
 ```
 
 The vendor cloud is used for session setup and controls. Once the session is
-active, the media packets go directly from the camera to the Odroid over UDP;
+active, the media packets go directly from the camera to the Home Assistant server over UDP;
 the cloud does not relay the video. The HTTP viewer and RTSP publisher share
 the same protocol implementation, but they must not listen on UDP port 50001
 at the same time.
@@ -75,7 +75,7 @@ be overridden through the environment file:
 | HTTP port | `5080` |
 | API host | `http://ipc.gps555.net` |
 | Application ID | see `config.env.example` |
-| Odroid LAN address | `192.168.2.45` in the development setup |
+| Home Assistant server LAN address | `192.168.2.45` in the development setup |
 
 The API currently uses an HTTP bearer token. The token is not included in this
 repository and must be supplied locally as `X5_API_TOKEN`.
@@ -133,10 +133,10 @@ curl http://127.0.0.1:5080/status
 Open the preview from a LAN browser:
 
 ```text
-http://<odroid-ip>:5080/stream.mjpg
+http://<home-assistant-server-ip>:5080/stream.mjpg
 ```
 
-Open `http://<odroid-ip>:5080/` for the control page. Click **Włącz dźwięk**
+Open `http://<home-assistant-server-ip>:5080/` for the control page. Click **Włącz dźwięk**
 once after opening the page; this is required by browser autoplay policy. The
 video and audio are currently separate browser tracks, so a small amount of
 drift can occur over a long session. The raw internal tracks are deliberately
@@ -194,13 +194,13 @@ stop the RTSP publisher, start the viewer, and reverse that order afterwards.
 
 This server is not yet a complete replacement for the vendor's cloud service.
 After startup it uses the vendor HTTP API, authenticated with the captured
-bearer token, to register the Odroid's UDP endpoint and request a live session.
+bearer token, to register the Home Assistant server's UDP endpoint and request a live session.
 It repeats that negotiation periodically so the stream can recover after a
 camera or network interruption. LED, IR, and image-profile commands also go
 through the vendor API.
 
 Once the session is negotiated, the actual video and audio packets travel
-directly between the camera and the Odroid over the LAN; they are not relayed
+directly between the camera and the Home Assistant server over the LAN; they are not relayed
 through the vendor cloud. The current architecture is therefore a local media
 proxy with cloud-assisted session setup, not a fully cloud-free implementation.
 Removing the remaining cloud dependency would require reverse-engineering a
@@ -216,7 +216,7 @@ remains an evidence-based hypothesis rather than a confirmed firmware detail.
 
 ## RTSP and Home Assistant
 
-On an ARMv7 Odroid with FFmpeg installed, install the optional RTSP layer:
+On an ARMv7 Home Assistant server with FFmpeg installed, install the optional RTSP layer:
 
 ```sh
 sudo ./install-rtsp.sh
@@ -225,7 +225,7 @@ sudo ./install-rtsp.sh
 This installs MediaMTX, starts a local RTSP publisher, and creates the stream:
 
 ```text
-rtsp://<odroid-ip>:8554/x5
+rtsp://<home-assistant-server-ip>:8554/x5
 ```
 
 The RTSP output normalizes the camera's JPEG frames to hardware-encoded H.264
@@ -333,8 +333,8 @@ rtsp://127.0.0.1:8554/x5
 
 The camera entity used during development is
 `camera.wificam_x5_276642521291`. The RTSP
-publisher and HA run on the same Odroid, so HA must use `127.0.0.1`, not the
-Odroid's LAN address. The browser connects to HA, while HA connects locally to
+publisher and HA run on the same Home Assistant server, so HA must use `127.0.0.1`, not the
+server's LAN address. The browser connects to HA, while HA connects locally to
 MediaMTX.
 
 The HA `stream` integration is configured for stable HLS:
@@ -366,7 +366,7 @@ persistent; leaving a YAML definition in place can create a second
 `WiFiCam X5 <UID>` entity after a later restart. A stale `x5_camera.yaml` file by
 itself does nothing unless it is included from `configuration.yaml`.
 
-The Odroid's HA service also starts with `--skip-pip-packages numpy`. HA
+The Home Assistant service also starts with `--skip-pip-packages numpy`. HA
 2023.10 requests exactly `numpy==1.26.0`, but ARMv7/Python 3.11 has no matching
 binary wheel and the installed GCC 7.5 cannot build it (NumPy 1.26 requires
 GCC 8.4+). NumPy 1.23.2 is already installed and is sufficient for the
@@ -490,7 +490,7 @@ The running process switches target and renegotiates the stream; a service
 restart is not needed. This selection is runtime-only and is not written back
 to `/etc/x5-viewer.env`, so use that file for the boot-time default.
 
-The browser demo is only a diagnostic UI. For the deployed Odroid setup,
+The browser demo is only a diagnostic UI. For the deployed Home Assistant server setup,
 `X5_HTTP_HOST=127.0.0.1` keeps it off the LAN while its internal endpoints
 remain available to Home Assistant and the RTSP publisher. Set it to
 `0.0.0.0` temporarily if the demo needs to be opened from another machine.
