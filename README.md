@@ -134,6 +134,13 @@ Removing the remaining cloud dependency would require reverse-engineering a
 direct local session/discovery handshake and a local replacement for the
 control API.
 
+The likely reason is that the cloud/live-session protocol is built into the
+camera firmware: the capture showed the camera opening its own TCP connection
+to a vendor server on port `8882`, while the app used `ipc.gps555.net` and the
+camera UID. We have not established whether the vendor hostname is compiled
+into firmware or obtained from another configuration/DNS mechanism, so this
+remains an evidence-based hypothesis rather than a confirmed firmware detail.
+
 ## Selecting a camera in the web UI
 
 The control page displays the known `X5_UID`; enter the camera's current LAN
