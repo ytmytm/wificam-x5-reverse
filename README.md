@@ -22,7 +22,7 @@ not require Docker, Node.js, npm, or Python packages.
 - automatic retry when the camera or cloud API is unavailable;
 - systemd autostart and graceful offline behavior;
 - optional local RTSP output at `rtsp://<odroid-ip>:8554/x5`;
-- optional Home Assistant FFmpeg Camera autoconfiguration;
+- optional Home Assistant MJPEG Camera autoconfiguration;
 - Python 3.6-compatible runtime code for older ARM systems.
 
 ## Current device assumptions
@@ -164,9 +164,9 @@ copied directly into RTSP.
 
 The publisher consumes the viewer's local MJPEG and PCM endpoints, so the
 camera negotiation remains in `x5-viewer.service` and the RTSP layer retries
-gracefully when the camera is offline. The installation also adds a Generic
-Camera entry with an RTSP `stream_source` to the existing Home Assistant
-configuration on the same host,
+gracefully when the camera is offline. On this older Home Assistant/ARMv7
+installation, the autoconfig uses the local MJPEG endpoint for the dashboard;
+the RTSP endpoint remains available for clients that support it.
 after making a timestamped backup. The installer attempts to validate the
 configuration before restarting Home Assistant; if the old HA environment
 cannot finish its dependency check, it leaves HA running and reports that
@@ -304,8 +304,8 @@ materials:
 - [FFmpeg RTP/JPEG depacketizer](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/rtpdec_jpeg.c);
 - [ACTi Streaming SDK guide](https://fen.home.pl/pub/webFTP/sterowniki/Acti/SDK/ACTi_SDK-10000_C_SDK_Programming_Guide-v1.2.33.pdf) — useful documentation of the same RTP/JPEG header layout;
 - [MediaMTX releases](https://github.com/bluenviron/mediamtx/releases) — lightweight RTSP server used by the optional output layer;
-- [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — configuration model used for the local RTSP camera;
-- [Home Assistant Stream](https://www.home-assistant.io/integrations/stream/) — continuous stream proxy used by the dashboard.
+- [Home Assistant Generic Camera](https://www.home-assistant.io/integrations/generic/) — RTSP configuration reference;
+- [Home Assistant MJPEG Camera](https://www.home-assistant.io/integrations/mjpeg/) — lightweight dashboard configuration used on the old HA host.
 
 The private `.pcap` files in this working tree are the primary evidence for
 this particular camera and are intentionally excluded from Git.
