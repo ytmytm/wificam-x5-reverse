@@ -258,6 +258,7 @@ def udp_worker() -> None:
     packet_count = 0
     video_packet_count = 0
     audio_packet_count = 0
+    firmware_heartbeat_count = 0
     frame_count = 0
     last_source = None
     last_video_packet_at = 0.0
@@ -305,9 +306,9 @@ def udp_worker() -> None:
             packet, source = sock.recvfrom(65535)
         except socket.timeout:
             if now >= next_stats:
-                log.info("UDP stats packets=%d video_packets=%d audio_packets=%d frames=%d last_source=%s",
+                log.info("UDP stats packets=%d video_packets=%d audio_packets=%d firmware_heartbeats=%d frames=%d last_source=%s",
                          packet_count, video_packet_count, audio_packet_count,
-                         frame_count, last_source or "none")
+                         firmware_heartbeat_count, frame_count, last_source or "none")
                 next_stats = now + LOG_INTERVAL
             continue
         packet_count += 1
@@ -315,6 +316,19 @@ def udp_worker() -> None:
         if packet_count == 1:
             log.info("first UDP packet received source=%s:%d len=%d header=%s",
                      source[0], source[1], len(packet), packet[:2].hex())
+        if packet == b"d.msg from firmware":
+            # Observed in the phone capture: the camera emits this short
+            # firmware heartbeat and the app answers immediately.  A timer
+            # heartbeat alone is not sufficient to keep every session alive.
+            try:
+                sock.sendto(b"App send heart for stun", source)
+                firmware_heartbeat_count += 1
+                log.debug("answered firmware heartbeat source=%s:%d count=%d",
+                          source[0], source[1], firmware_heartbeat_count)
+            except OSError:
+                log.warning("could not answer firmware heartbeat source=%s:%d",
+                            source[0], source[1])
+            continue
         if len(packet) < 16 or packet[:2] not in (b"\x80\x1a", b"\x80\x9a"):
             if len(packet) >= 16 and packet[:2] == b"\x80\x80":
                 # RTP PT 128, SSRC 42521291, followed by G.711 μ-law bytes.
@@ -347,9 +361,9 @@ def udp_worker() -> None:
         if len(groups) > 32:
             groups.pop(next(iter(groups)))
         if now >= next_stats:
-            log.info("UDP stats packets=%d video_packets=%d audio_packets=%d frames=%d last_source=%s",
+            log.info("UDP stats packets=%d video_packets=%d audio_packets=%d firmware_heartbeats=%d frames=%d last_source=%s",
                      packet_count, video_packet_count, audio_packet_count,
-                     frame_count, last_source or "none")
+                     firmware_heartbeat_count, frame_count, last_source or "none")
             next_stats = now + LOG_INTERVAL
 
 

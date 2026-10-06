@@ -364,6 +364,12 @@ negotiation but zero packets is therefore possible. If it remains at zero for
 several minutes, capture traffic around UDP port 50001 and compare it with a
 mobile-app live-view capture; do not assume that restarting HA will help.
 
+The receiver also answers the camera's observed `d.msg from firmware` UDP
+heartbeat with `App send heart for stun`. This response is part of the local
+session keepalive and is separate from the periodic heartbeat sent by the
+publisher timer. Omitting it can produce a stream that works briefly and then
+stops even though the cloud negotiation continues to succeed.
+
 If the RTSP stream works with `ffprobe` but HA is blank, the problem is in HA's
 Generic Camera entry, HLS/browser compatibility, or the dashboard card. If
 RTSP itself is absent, fix the publisher/camera layer first.
