@@ -240,11 +240,11 @@ Home Assistant/ARMv7 installation, Generic Camera uses
 `rtsp://127.0.0.1:8554/x5` as its stream source. The RTSP stream is handled by
 HA's `stream` integration.
 
-The installer configures low-latency HLS (`ll_hls: true`) with 2-second
-segments and 0.5-second parts. This should reduce live-view latency to roughly
-1–2 seconds. If an older browser/client repeatedly rebuffers despite a healthy
-RTSP input, set `ll_hls: false`; that is more stable but adds several seconds
-of buffering.
+The installer configures stable non-LL HLS (`ll_hls: false`). On the tested
+older HA/browser combination, LL-HLS could play the initial playlist and then
+stop requesting usable subsequent fragments. Non-LL HLS adds several seconds
+of latency, but avoids that failure mode. Treat LL-HLS as experimental on this
+installation.
 
 The publisher declares the camera's measured input rate explicitly as 8 FPS.
 Without `-framerate 8`, FFmpeg assumes 25 FPS for the multipart MJPEG input;
@@ -265,20 +265,15 @@ publisher and HA run on the same Odroid, so HA must use `127.0.0.1`, not the
 Odroid's LAN address. The browser connects to HA, while HA connects locally to
 MediaMTX.
 
-The HA `stream` integration is configured for low-latency HLS:
+The HA `stream` integration is configured for stable HLS:
 
 ```yaml
 stream:
-  ll_hls: true
-  segment_duration: 2
-  part_duration: 0.5
+  ll_hls: false
 ```
 
-This is expected to give roughly 1–2 seconds of live-view latency. If an old
-browser repeatedly shows `loading` or renders partial segments unreliably, use
-`ll_hls: false`; that is more stable but normally adds several seconds of
-latency. These settings affect HA's browser output only; they do not change
-the camera's UDP stream.
+This normally gives roughly 4–6 seconds of live-view latency. These settings
+affect HA's browser output only; they do not change the camera's UDP stream.
 
 The RTSP publisher also paces the reassembled JPEG input at the measured 8 FPS.
 During a short camera-side video pause it repeats the last complete frame for
