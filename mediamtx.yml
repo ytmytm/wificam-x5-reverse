@@ -1,6 +1,8 @@
 logLevel: info
 rtsp: true
 rtspAddress: :8554
+readTimeout: 60s
+writeTimeout: 60s
 
 paths:
   x5:

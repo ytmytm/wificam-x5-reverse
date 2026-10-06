@@ -31,6 +31,7 @@ APP_ID = os.getenv("X5_APP_ID", "863b979a7c9dedd5c85b3626b02c9bfe9c771583")
 TOKEN = os.getenv("X5_API_TOKEN", "")
 LOG_LEVEL = os.getenv("X5_LOG_LEVEL", "INFO").upper()
 LOG_INTERVAL = float(os.getenv("X5_LOG_INTERVAL", "10"))
+VIDEO_STALE_SECONDS = float(os.getenv("X5_VIDEO_STALE_SECONDS", "30"))
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -259,6 +260,7 @@ def udp_worker() -> None:
     audio_packet_count = 0
     frame_count = 0
     last_source = None
+    last_video_packet_at = 0.0
     camera_port = None
     config_generation = -1
 
@@ -268,9 +270,16 @@ def udp_worker() -> None:
         if generation != config_generation:
             camera_port = None
             groups.clear()
+            last_video_packet_at = 0.0
             config_generation = generation
             next_negotiation = 0.0
-        if now >= next_negotiation:
+        # Do not renegotiate a healthy session.  The camera can pause its
+        # media flow while processing a new live-event request; doing this on
+        # a fixed timer created avoidable RTSP gaps every ~20 seconds.  Only
+        # retry after startup or after a real UDP/media timeout.
+        session_stale = (not last_video_packet_at or
+                         now - last_video_packet_at > VIDEO_STALE_SECONDS)
+        if now >= next_negotiation and (camera_port is None or session_stale):
             try:
                 if TOKEN:
                     camera_port = Cloud(uid, camera_ip).negotiate()
@@ -279,7 +288,7 @@ def udp_worker() -> None:
                 else:
                     state.set_status("listening", "X5_API_TOKEN is not configured")
                     log.warning("no API token; UDP negotiation disabled")
-                next_negotiation = now + 20
+                next_negotiation = now + 10
             except Exception as exc:
                 state.set_status("offline", str(exc)[:160])
                 log.warning("negotiation failed camera=%s: %s", camera_ip, exc)
@@ -313,6 +322,7 @@ def udp_worker() -> None:
                 state.publish_audio(mulaw_to_pcm16(packet[16:]))
             continue
         video_packet_count += 1
+        last_video_packet_at = now
         frame_id = packet[6:12]
         offset = struct.unpack("!I", packet[12:16])[0]
         groups.setdefault(frame_id, {})[offset] = packet[16:]

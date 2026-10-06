@@ -280,6 +280,14 @@ browser repeatedly shows `loading` or renders partial segments unreliably, use
 latency. These settings affect HA's browser output only; they do not change
 the camera's UDP stream.
 
+The RTSP publisher also paces the reassembled JPEG input at the measured 8 FPS.
+During a short camera-side video pause it repeats the last complete frame for
+up to 30 seconds. MediaMTX tolerates up to 60 seconds without RTSP traffic,
+and the receiver waits 30 seconds without video before renegotiating. This
+keeps FFmpeg and MediaMTX alive instead of turning a temporary missing frame
+into an RTSP reconnect and an HLS loading cycle. If no new video packets arrive
+beyond that grace period, the normal negotiation and restart logic takes over.
+
 After Home Assistant imports the Generic Camera entry, do not keep a second
 `camera: !include x5_camera.yaml` definition. The imported config entry is
 persistent; leaving a YAML definition in place can create a second
@@ -354,7 +362,9 @@ Check the layers in this order; do not start by changing HLS buffering:
 
 The camera firmware sometimes needs time after boot or a Wi-Fi reconnect
 before it starts the live UDP flow. The publisher retries the cloud request
-every 20 seconds and does not restart HA. A temporary period with successful
+after startup or after more than 10 seconds without UDP packets. It does not
+renegotiate a healthy session, because this camera can pause its media flow
+while processing a new live-event request. A temporary period with successful
 negotiation but zero packets is therefore possible. If it remains at zero for
 several minutes, capture traffic around UDP port 50001 and compare it with a
 mobile-app live-view capture; do not assume that restarting HA will help.

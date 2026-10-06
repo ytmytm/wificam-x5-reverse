@@ -15,6 +15,7 @@ from x5_viewer import state, udp_worker
 
 FFMPEG = os.getenv("X5_FFMPEG", "/usr/local/bin/ffmpeg")
 RTSP_URL = os.getenv("X5_RTSP_URL", "rtsp://127.0.0.1:8554/x5")
+VIDEO_GRACE_SECONDS = float(os.getenv("X5_VIDEO_GRACE_SECONDS", "30"))
 
 
 def write_all(fd: int, data: bytes) -> None:
@@ -24,14 +25,26 @@ def write_all(fd: int, data: bytes) -> None:
 
 
 def copy_video(fd: int, stop: threading.Event) -> None:
-    last = 0.0
+    # The camera can pause UDP video for several seconds while keeping the
+    # session alive.  Feed the last complete JPEG at the measured 8 FPS so
+    # FFmpeg/MediaMTX do not interpret a short pause as an ended RTSP source.
+    # Once the frame is too old, stop duplicating it and let the normal retry
+    # path take over.
+    frame_period = 1.0 / 8.0
+    next_write = time.monotonic()
+    last_stamp = 0.0
+    last_jpeg = None
     try:
         while not stop.is_set():
             with state.lock:
                 jpeg, stamp = state.jpeg, state.updated
-            if jpeg and stamp != last:
-                write_all(fd, jpeg)
-                last = stamp
+            if jpeg and stamp != last_stamp:
+                last_jpeg, last_stamp = jpeg, stamp
+            now = time.monotonic()
+            if (last_jpeg and time.time() - last_stamp <= VIDEO_GRACE_SECONDS
+                    and now >= next_write):
+                write_all(fd, last_jpeg)
+                next_write = now + frame_period
             else:
                 stop.wait(0.01)
     except (BrokenPipeError, OSError):
