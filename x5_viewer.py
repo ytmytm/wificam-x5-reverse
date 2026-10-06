@@ -3,6 +3,7 @@
 
 import json
 import ipaddress
+import logging
 import os
 import queue
 import socket
@@ -28,6 +29,14 @@ HTTP_PORT = int(os.getenv("X5_HTTP_PORT", "5080"))
 API_BASE = os.getenv("X5_API_BASE", "http://ipc.gps555.net")
 APP_ID = os.getenv("X5_APP_ID", "863b979a7c9dedd5c85b3626b02c9bfe9c771583")
 TOKEN = os.getenv("X5_API_TOKEN", "")
+LOG_LEVEL = os.getenv("X5_LOG_LEVEL", "INFO").upper()
+LOG_INTERVAL = float(os.getenv("X5_LOG_INTERVAL", "10"))
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+log = logging.getLogger("x5")
 
 COMMANDS = {
     "led": 3,
@@ -175,9 +184,12 @@ class Cloud:
     def get(self, path: str, **params: str) -> dict:
         params.update(appId=APP_ID)
         url = API_BASE + path + "?" + urllib.parse.urlencode(params)
+        log.debug("cloud GET %s params=%s", path, ",".join(sorted(params)))
         req = urllib.request.Request(url, headers={"Authorization": "Bearer " + TOKEN})
         with urllib.request.urlopen(req, timeout=8) as response:
-            return json.loads(response.read().decode())
+            result = json.loads(response.read().decode())
+            log.debug("cloud GET %s -> HTTP %s", path, response.status)
+            return result
 
     def send_command(self, command: int, value: int) -> dict:
         if not TOKEN:
@@ -197,13 +209,18 @@ class Cloud:
     def negotiate(self) -> int:
         # The app registers its reachable UDP endpoint, then asks the cloud
         # to notify the camera that a live event is wanted.
+        log.info("negotiation start uid=%s camera=%s local_udp=%s:%d api=%s",
+                 self.uid, self.camera_ip, self.private_ip, LISTEN_PORT, API_BASE)
         self.get("/api/v1/ipc/send-stun-addr", publicIp=self.private_ip,
                  publicPort=str(LISTEN_PORT), privateIp=self.private_ip,
                  privatePort=str(LISTEN_PORT), uid=self.uid)
+        log.info("registered UDP endpoint for camera=%s", self.camera_ip)
         self.get("/api/v1/ipc/notify-live-event", eventType="1", uid=self.uid)
+        log.info("requested live event for uid=%s", self.uid)
         response = self.get("/api/v1/ipc/stun-addr/" + self.uid)
         data = response.get("data", response)
         port = int(data.get("IpcPublicPort") or data.get("IpcPrivatePort"))
+        log.info("camera UDP endpoint reported as %s:%d", self.camera_ip, port)
         return port
 
 
@@ -236,6 +253,12 @@ def udp_worker() -> None:
     groups = {}  # type: Dict[bytes, Dict[int, bytes]]
     next_negotiation = 0.0
     next_heartbeat = 0.0
+    next_stats = time.monotonic() + LOG_INTERVAL
+    packet_count = 0
+    video_packet_count = 0
+    audio_packet_count = 0
+    frame_count = 0
+    last_source = None
     camera_port = None
     config_generation = -1
 
@@ -252,28 +275,44 @@ def udp_worker() -> None:
                 if TOKEN:
                     camera_port = Cloud(uid, camera_ip).negotiate()
                     state.set_status("negotiated")
+                    log.info("negotiation succeeded camera=%s:%d", camera_ip, camera_port)
                 else:
                     state.set_status("listening", "X5_API_TOKEN is not configured")
+                    log.warning("no API token; UDP negotiation disabled")
                 next_negotiation = now + 20
             except Exception as exc:
                 state.set_status("offline", str(exc)[:160])
+                log.warning("negotiation failed camera=%s: %s", camera_ip, exc)
                 next_negotiation = now + 10
         if camera_port and now >= next_heartbeat:
             try:
                 sock.sendto(b"DrApp send hello", (camera_ip, camera_port))
                 sock.sendto(b"App send heart for stun", (camera_ip, camera_port))
+                log.debug("heartbeat sent to camera=%s:%d", camera_ip, camera_port)
             except OSError:
-                pass
+                log.warning("heartbeat failed to camera=%s:%d", camera_ip, camera_port)
             next_heartbeat = now + 4
         try:
-            packet, _ = sock.recvfrom(65535)
+            packet, source = sock.recvfrom(65535)
         except socket.timeout:
+            if now >= next_stats:
+                log.info("UDP stats packets=%d video_packets=%d audio_packets=%d frames=%d last_source=%s",
+                         packet_count, video_packet_count, audio_packet_count,
+                         frame_count, last_source or "none")
+                next_stats = now + LOG_INTERVAL
             continue
+        packet_count += 1
+        last_source = "%s:%d" % source
+        if packet_count == 1:
+            log.info("first UDP packet received source=%s:%d len=%d header=%s",
+                     source[0], source[1], len(packet), packet[:2].hex())
         if len(packet) < 16 or packet[:2] not in (b"\x80\x1a", b"\x80\x9a"):
             if len(packet) >= 16 and packet[:2] == b"\x80\x80":
                 # RTP PT 128, SSRC 42521291, followed by G.711 μ-law bytes.
+                audio_packet_count += 1
                 state.publish_audio(mulaw_to_pcm16(packet[16:]))
             continue
+        video_packet_count += 1
         frame_id = packet[6:12]
         offset = struct.unpack("!I", packet[12:16])[0]
         groups.setdefault(frame_id, {})[offset] = packet[16:]
@@ -287,11 +326,21 @@ def udp_worker() -> None:
                         state.updated = time.time()
                         state.received += 1
                         state.status = "streaming"
+                        frame_count += 1
+                        if frame_count == 1:
+                            log.info("first video frame assembled bytes=%d source=%s:%d",
+                                     len(jpeg), source[0], source[1])
                 except Exception as exc:
                     state.set_status("decode-error", str(exc)[:160])
+                    log.warning("video frame decode failed: %s", exc)
         # Drop incomplete frames so a lost packet cannot grow memory forever.
         if len(groups) > 32:
             groups.pop(next(iter(groups)))
+        if now >= next_stats:
+            log.info("UDP stats packets=%d video_packets=%d audio_packets=%d frames=%d last_source=%s",
+                     packet_count, video_packet_count, audio_packet_count,
+                     frame_count, last_source or "none")
+            next_stats = now + LOG_INTERVAL
 
 
 class Handler(BaseHTTPRequestHandler):
