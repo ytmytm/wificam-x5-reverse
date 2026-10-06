@@ -58,7 +58,7 @@ button:hover{border-color:var(--accent);background:#30445d}button:disabled{curso
 <h1>WiFiCam X5</h1><div class="sub">Lokalny podgląd i sterowanie kamerą TXW817</div>
 <div class="layout"><section class="card video"><img src="/stream.mjpg" alt="Podgląd kamery"></section>
 <aside class="card controls">
-<div class="group"><h2>Kamerka</h2><label>UID<br><input id="cameraUid" inputmode="numeric" style="width:100%;margin:4px 0 8px;padding:8px;background:#111923;color:#eef4fb;border:1px solid #4a5b70;border-radius:6px"></label><label>IP w LAN<br><input id="cameraIp" inputmode="decimal" style="width:100%;margin:4px 0 8px;padding:8px;background:#111923;color:#eef4fb;border:1px solid #4a5b70;border-radius:6px"></label><button onclick="selectCamera()">Wybierz kamerę</button><div class="hint">UID pochodzi z aplikacji/API; IP z DHCP/LAN.</div></div>
+<div class="group"><h2>Kamerka</h2><label>IP w LAN<br><input id="cameraIp" inputmode="decimal" style="width:100%;margin:4px 0 8px;padding:8px;background:#111923;color:#eef4fb;border:1px solid #4a5b70;border-radius:6px"></label><button onclick="selectCamera()">Wybierz po IP</button><div class="hint">UID: <code id="cameraUid">nieznany</code><br>UID pochodzi z aplikacji/API; IP z DHCP/LAN.</div></div>
 <div class="group"><h2>Stan</h2><span id="status" class="pill">sprawdzam…</span><div id="result" class="result"></div></div>
 <div class="group"><h2>Dioda</h2><div class="buttons"><button onclick="cmd('led',1)">Włącz</button><button onclick="cmd('led',0)">Wyłącz</button></div></div>
 <div class="group"><h2>IR</h2><div class="buttons"><button onclick="cmd('ir',1)">Włącz</button><button onclick="cmd('ir',0)">Wyłącz</button></div></div>
@@ -67,9 +67,9 @@ button:hover{border-color:var(--accent);background:#30445d}button:disabled{curso
 <div class="group"><h2>Dźwięk</h2><button id="audioButton" onclick="toggleAudio()">Włącz dźwięk</button><div id="audioState" class="hint">Dźwięk jest osobnym strumieniem G.711 μ-law 8 kHz. Przeglądarka wymaga kliknięcia.</div></div>
 </aside></div>
 <script>
-async function refresh(){try{let r=await fetch('/status');let x=await r.json();let e=document.getElementById('status');e.textContent=x.status+' · klatki: '+x.frames;e.className='pill '+(x.status==='streaming'?'ok':'bad');document.getElementById('cameraUid').value=x.uid||'';document.getElementById('cameraIp').value=x.camera_ip||'';}catch(e){}}
+async function refresh(){try{let r=await fetch('/status');let x=await r.json();let e=document.getElementById('status');e.textContent=x.status+' · klatki: '+x.frames;e.className='pill '+(x.status==='streaming'?'ok':'bad');document.getElementById('cameraUid').textContent=x.uid||'nieznany';document.getElementById('cameraIp').value=x.camera_ip||'';}catch(e){}}
 async function cmd(name,value){let out=document.getElementById('result');out.textContent='Wysyłanie…';try{let r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:name,value:value})});let x=await r.json();out.textContent=r.ok?'Wysłano: '+name+' = '+value:(x.error||'Błąd');}catch(e){out.textContent='Błąd połączenia';}}
-async function selectCamera(){let out=document.getElementById('result');out.textContent='Przełączanie…';try{let r=await fetch('/api/camera',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:document.getElementById('cameraUid').value,camera_ip:document.getElementById('cameraIp').value})});let x=await r.json();out.textContent=r.ok?'Wybrano '+x.uid+' / '+x.camera_ip:(x.error||'Błąd');}catch(e){out.textContent='Błąd połączenia';}}
+async function selectCamera(){let out=document.getElementById('result');out.textContent='Przełączanie…';try{let r=await fetch('/api/camera',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({camera_ip:document.getElementById('cameraIp').value})});let x=await r.json();out.textContent=r.ok?'Wybrano IP '+x.camera_ip:(x.error||'Błąd');}catch(e){out.textContent='Błąd połączenia';}}
 let audioRun=false,audioContext=null,audioReader=null,audioNext=0;
 function ulawByte(x){x=(~x)&255;let t=((x&15)<<3)+132;t<<=((x&112)>>4);return (x&128)?(132-t):(t-132);}
 async function toggleAudio(){let b=document.getElementById('audioButton'),s=document.getElementById('audioState');
@@ -359,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 request = json.loads(self.rfile.read(length).decode("utf-8"))
-                uid = str(request["uid"]).strip()
+                uid = str(request.get("uid", camera_config.get()[0])).strip()
                 camera_ip = str(request["camera_ip"]).strip()
                 if not uid.isdigit() or not 6 <= len(uid) <= 20:
                     raise ValueError("UID must contain 6-20 digits")

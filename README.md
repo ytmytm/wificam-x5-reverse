@@ -120,8 +120,8 @@ The viewer remains running when the camera is absent. It reports `offline` or
 
 ## Selecting a camera in the web UI
 
-The control page displays the current `X5_UID` and `X5_CAMERA_IP`. Enter the
-numeric UID and the camera's current LAN address, then click **Wybierz kamerę**.
+The control page displays the known `X5_UID`; enter the camera's current LAN
+address and click **Wybierz po IP**.
 The running process switches target and renegotiates the stream; a service
 restart is not needed. This selection is runtime-only and is not written back
 to `/etc/x5-viewer.env`, so use that file for the boot-time default.
@@ -151,14 +151,23 @@ machine.
    preview. Wait until video is visible, then stop `tcpdump`.
 4. Copy the pcap to a trusted development machine. Do not commit it: it can
    contain bearer tokens, account data, and device identifiers.
-5. Extract the token locally:
+5. Extract ready-to-paste private configuration lines locally:
 
    ```sh
    ./tools/extract_token.sh /path/to/x5-full.pcap
    ```
 
-   The script prints the token once. Redirect it only to a protected temporary
-   file or paste it directly into `/etc/x5-viewer.env`; never put it in Git.
+   The script prints a block such as:
+
+   ```text
+   X5_API_TOKEN=...
+   X5_UID=276642521291
+   X5_CAMERA_IP=192.168.2.158
+   ```
+
+   It includes UID and camera IP only when they can be identified from the
+   capture. Paste the block into private `config.env` or
+   `/etc/x5-viewer.env`; never put it in Git.
 
 The extractor intentionally accepts only HTTP `Authorization: Bearer` headers
 from the supplied capture. If the app changes to HTTPS, the token cannot be
