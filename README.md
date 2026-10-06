@@ -157,6 +157,11 @@ This installs MediaMTX, starts a local RTSP publisher, and creates the stream:
 rtsp://<odroid-ip>:8554/x5
 ```
 
+The RTSP output normalizes the camera's JPEG frames to hardware-encoded H.264
+(`640x480`) and carries audio as G.711 μ-law (`8 kHz`, mono). This avoids
+green/corrupted frames that can occur when the camera-specific JPEG stream is
+copied directly into RTSP.
+
 The publisher consumes the viewer's local MJPEG and PCM endpoints, so the
 camera negotiation remains in `x5-viewer.service` and the RTSP layer retries
 gracefully when the camera is offline. The installation also adds an FFmpeg
